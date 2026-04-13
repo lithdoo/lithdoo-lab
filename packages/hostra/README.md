@@ -32,6 +32,7 @@ ELECHER_RPC_PORT=9333
 ELECHER_RPC_TOKEN=replace-with-strong-token
 ELECHER_SUBCMD=node ./app.js
 ELECHER_CONFIG_DIR=.
+ELECHER_USER_DATA_DIR=./user-data
 ```
 
 3. 启动：
@@ -47,6 +48,7 @@ npx hostra
 - `ELECHER_RPC_TOKEN`：RPC 鉴权令牌（可选，设置后客户端必须携带 token）。
 - `ELECHER_SUBCMD`：子进程命令（可选，子进程退出后应用退出）。
 - `ELECHER_CONFIG_DIR`：配置目录（默认 `process.cwd()`，用于相对路径解析）。
+- `ELECHER_USER_DATA_DIR`：Electron `userData` 目录（可选）。设置后可精确控制 cookie/session 本地持久化根目录。
 - `ELECHER_MIRROR`：Electron 下载镜像（安装时使用）。
 
 ## 配置优先级

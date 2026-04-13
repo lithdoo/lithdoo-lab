@@ -61,7 +61,8 @@ function loadConfig() {
     port: Number.isFinite(envPort) ? envPort : 9333,
     cmd: process.env.ELECHER_SUBCMD || null,
     configDir: envConfigDir,
-    rpcToken: process.env.ELECHER_RPC_TOKEN || null
+    rpcToken: process.env.ELECHER_RPC_TOKEN || null,
+    userDataDir: process.env.ELECHER_USER_DATA_DIR || null
   };
 }
 
@@ -85,6 +86,14 @@ env.ELECHER_CONFIG_DIR = config.configDir;
 if (config.rpcToken) {
   env.ELECHER_RPC_TOKEN = config.rpcToken;
 }
+if (config.userDataDir) {
+  env.ELECHER_USER_DATA_DIR = path.resolve(config.userDataDir);
+}
+
+// Preserve caller's relative config dir semantics even though Electron process
+// runs with cwd set to package root.
+const resolvedConfigDir = path.resolve(config.configDir);
+env.ELECHER_CONFIG_DIR = resolvedConfigDir;
 
 console.log('[hostra] Electron path:', electronPath);
 
