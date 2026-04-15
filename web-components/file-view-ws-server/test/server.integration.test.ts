@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { request } from 'node:http';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,12 @@ interface RpcMessage {
   params?: unknown;
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
+}
+
+interface HttpResponse {
+  statusCode: number;
+  body: Buffer;
+  headers: Record<string, string | string[] | undefined>;
 }
 
 function getFreePort(): Promise<number> {
@@ -36,6 +43,38 @@ function getFreePort(): Promise<number> {
         resolve(port);
       });
     });
+  });
+}
+
+function postJson(port: number, path: string, body: unknown): Promise<HttpResponse> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = request(
+      {
+        host: '127.0.0.1',
+        port,
+        path,
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'content-length': Buffer.byteLength(payload).toString(),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            body: Buffer.concat(chunks),
+            headers: res.headers,
+          });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
   });
 }
 
@@ -170,6 +209,48 @@ test('server binds fv rpc methods and pushes notifications', async () => {
     assert.equal(metadata?.info?.title, 'v1');
   } finally {
     ws.close();
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('POST /file/blob returns binary stream', async () => {
+  const port = await getFreePort();
+  const root = await mkdtemp(join(tmpdir(), 'fv-http-blob-'));
+  const logger = { info: () => {}, warn: () => {}, error: () => {} };
+  const server = createFileViewWsServer({ port, host: '127.0.0.1', logger });
+  await server.listen();
+
+  try {
+    const filePath = join(root, 'blob.bin');
+    const content = Buffer.from('blob-content-123', 'utf8');
+    await writeFile(filePath, content);
+    const fileUrl = pathToFileURL(filePath).toString();
+
+    const resp = await postJson(port, '/file/blob', { fileUrl });
+    assert.equal(resp.statusCode, 200);
+    assert.equal(resp.headers['content-type'], 'application/octet-stream');
+    assert.equal(resp.body.toString('utf8'), 'blob-content-123');
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('POST /file/blob returns expected errors', async () => {
+  const port = await getFreePort();
+  const root = await mkdtemp(join(tmpdir(), 'fv-http-blob-err-'));
+  const logger = { info: () => {}, warn: () => {}, error: () => {} };
+  const server = createFileViewWsServer({ port, host: '127.0.0.1', logger });
+  await server.listen();
+
+  try {
+    const invalidProtocol = await postJson(port, '/file/blob', { fileUrl: 'http://example.com/a.txt' });
+    assert.equal(invalidProtocol.statusCode, 422);
+
+    const missingFile = await postJson(port, '/file/blob', { fileUrl: pathToFileURL(join(root, 'missing.txt')).toString() });
+    assert.equal(missingFile.statusCode, 404);
+  } finally {
     await server.close();
     await rm(root, { recursive: true, force: true });
   }

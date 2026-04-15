@@ -14,6 +14,7 @@ npm run start
 
 - 健康检查：`http://127.0.0.1:8081/health`
 - WebSocket JSON-RPC：`ws://127.0.0.1:8081/rpc`
+- 文件二进制下载：`POST http://127.0.0.1:8081/file/blob`
 
 可通过环境变量覆盖 host/port：
 
@@ -47,6 +48,43 @@ npm test
 ```json
 {"jsonrpc":"2.0","id":1,"result":{"ok":true}}
 ```
+
+## HTTP 接口
+
+### `POST /file/blob`
+
+用途：按 `fileUrl` 返回对应文件的二进制数据流（复用与 ws 相同端口）。
+
+请求体（JSON）：
+
+```json
+{"fileUrl":"file:///D:/data/a.txt"}
+```
+
+请求体大小限制：`20MB`（超出返回 `413`）。
+
+成功响应：
+
+- 状态码：`200`
+- `content-type: application/octet-stream`
+- 响应体：文件二进制流
+
+示例：
+
+```bash
+curl -X POST "http://127.0.0.1:8081/file/blob" \
+  -H "content-type: application/json" \
+  -d "{\"fileUrl\":\"file:///D:/data/a.txt\"}" \
+  --output a.txt
+```
+
+错误码：
+
+- `400`：请求体非法、缺少参数、目标不是普通文件
+- `413`：请求体过大
+- `422`：`fileUrl` 不是 `file://` 协议
+- `404`：文件不存在
+- `500`：文件读取失败
 
 ## File-View JSON-RPC 接口设计
 
@@ -172,9 +210,3 @@ npm test
 - `-32002` 目标路径不是目录
 - `-32003` 监听器初始化或刷新失败
 
-## 下一步
-
-计划中的方法（当前骨架未实现）：
-
-- `file.list`
-- `file.read`
