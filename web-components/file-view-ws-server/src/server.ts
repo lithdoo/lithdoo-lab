@@ -2,11 +2,13 @@ import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { createHandlers } from './handlers.js';
+import { createFVWsConnection } from './connection.js';
 import {
   JSON_RPC_ERRORS,
   createErrorResponse,
   dispatchJsonRpc,
   parseJsonRpcMessage,
+  type JsonRpcRequest,
   type JsonRpcResponse,
 } from './jsonrpc.js';
 
@@ -30,6 +32,15 @@ function sendJson(ws: WebSocket, payload: JsonRpcResponse): void {
   ws.send(JSON.stringify(payload));
 }
 
+function sendNotification(ws: WebSocket, method: string, params: unknown): void {
+  const notification: JsonRpcRequest = {
+    jsonrpc: '2.0',
+    method,
+    params,
+  };
+  ws.send(JSON.stringify(notification));
+}
+
 function normalizeRawMessage(data: RawData): string {
   if (typeof data === 'string') {
     return data;
@@ -51,7 +62,6 @@ export function createFileViewWsServer(options: FileViewWsServerOptions): FileVi
     error: (message: string) => console.error(`[file-view-ws-server] ${message}`),
   };
 
-  const handlers = createHandlers();
   const httpServer = createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
@@ -66,6 +76,16 @@ export function createFileViewWsServer(options: FileViewWsServerOptions): FileVi
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (ws) => {
+    const connection = createFVWsConnection({
+      onFileChange: (type, file) => {
+        sendNotification(ws, 'fv.onFileChange', { type, file });
+      },
+      onTargetDirChange: (state) => {
+        sendNotification(ws, 'fv.onTargetDirChange', { state });
+      },
+    });
+    const handlers = createHandlers(connection);
+
     ws.on('message', async (data: RawData) => {
       const raw = normalizeRawMessage(data);
       const parsed = parseJsonRpcMessage(raw);
@@ -94,6 +114,12 @@ export function createFileViewWsServer(options: FileViewWsServerOptions): FileVi
       }
 
       sendJson(ws, response);
+    });
+
+    ws.on('close', () => {
+      void connection.clearTargetDir().catch((error) => {
+        log.warn(`Failed to clear connection watcher on close: ${String(error)}`);
+      });
     });
   });
 

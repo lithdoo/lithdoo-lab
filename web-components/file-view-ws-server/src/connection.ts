@@ -1,8 +1,9 @@
 import chokidar, { type FSWatcher } from 'chokidar';
-import { readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { FVDirectory, FVFile } from './base.js';
+import { parse as parseToml } from 'toml';
+import type { FVDirectory, FVFile, FVMeta, FVMetaInfo, FVMetaLink } from './base.js';
 
 export interface IFVState {
   fileList: (FVFile | FVDirectory)[];
@@ -26,8 +27,8 @@ export interface IFVWsConnection {
   // 清除监听目录
   clearTargetDir(): Promise<IFVState>;
 
-  // 获取文件列表
-  fetchFileList(): Promise<IFVState>;
+  // 获取当前连接状态
+  getState(): Promise<IFVState>;
 }
 
 interface SnapshotEntry {
@@ -105,8 +106,109 @@ function computePrimarySignature(
   baseSignature: string,
   metadataFileUrl?: string,
   thumbnailFileUrl?: string,
+  metadataDigest?: string,
 ): string {
-  return `${baseSignature}|meta:${metadataFileUrl ?? ''}|thumb:${thumbnailFileUrl ?? ''}`;
+  return `${baseSignature}|meta:${metadataFileUrl ?? ''}|thumb:${thumbnailFileUrl ?? ''}|metaDigest:${metadataDigest ?? ''}`;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value.filter((item) => typeof item === 'string');
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function toMetaLinks(value: unknown): FVMetaLink[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const links: FVMetaLink[] = [];
+  for (const item of value) {
+    if (!isObject(item)) {
+      continue;
+    }
+    if (typeof item.title !== 'string' || typeof item.url !== 'string') {
+      continue;
+    }
+    links.push({ title: item.title, url: item.url });
+  }
+  return links.length > 0 ? links : undefined;
+}
+
+function normalizeMetaInfo(raw: unknown, fallbackLinks?: FVMetaLink[]): FVMetaInfo | undefined {
+  if (!isObject(raw)) {
+    if (!fallbackLinks) {
+      return undefined;
+    }
+    return { links: fallbackLinks };
+  }
+  const info: FVMetaInfo = {};
+  if (typeof raw.title === 'string') {
+    info.title = raw.title;
+  }
+  if (typeof raw.describe === 'string') {
+    info.describe = raw.describe;
+  }
+  const tags = toStringArray(raw.tags);
+  if (tags) {
+    info.tags = tags;
+  }
+  const ownLinks = toMetaLinks(raw.links);
+  if (ownLinks) {
+    info.links = ownLinks;
+  } else if (fallbackLinks) {
+    info.links = fallbackLinks;
+  }
+  return Object.keys(info).length > 0 ? info : undefined;
+}
+
+function toFVMeta(raw: unknown): FVMeta | undefined {
+  if (!isObject(raw)) {
+    return undefined;
+  }
+  const topLevelLinks = toMetaLinks(raw.links);
+  const info = normalizeMetaInfo(raw.info, topLevelLinks);
+  const extendsField = isObject(raw.extends) ? raw.extends : undefined;
+  const meta: FVMeta = {};
+  if (info) {
+    meta.info = info;
+  }
+  if (extendsField) {
+    meta.extends = extendsField;
+  }
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  const objectValue = value as Record<string, unknown>;
+  const keys = Object.keys(objectValue).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(objectValue[key])}`).join(',')}}`;
+}
+
+function metadataDigest(value: FVMeta | undefined): string {
+  return value ? stableStringify(value) : '';
+}
+
+async function readMetaFile(fileUrl: string): Promise<FVMeta | undefined> {
+  try {
+    const filePath = fileUrlToPathSafe(fileUrl);
+    const content = await readFile(filePath, 'utf8');
+    const parsed = parseToml(content) as unknown;
+    return toFVMeta(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 async function scanDirectory(dirFileUrl: string): Promise<Map<string, SnapshotEntry>> {
@@ -166,25 +268,24 @@ async function scanDirectory(dirFileUrl: string): Promise<Map<string, SnapshotEn
     }),
   );
 
-  for (const [name, primary] of primaryByName) {
-    const meta = metaCandidates.get(name)?.[0];
-    const thumb = thumbCandidates.get(name)?.[0];
-    if (primary.item.kind === 'file') {
+  await Promise.all(
+    [...primaryByName.entries()].map(async ([name, primary]) => {
+      const meta = metaCandidates.get(name)?.[0];
+      const thumb = thumbCandidates.get(name)?.[0];
       primary.item.metadataFileUrl = meta?.fileUrl;
       primary.item.thumbnailFileUrl = thumb?.fileUrl;
-    } else {
-      primary.item.metadataFileUrl = meta?.fileUrl;
-      primary.item.thumbnailFileUrl = thumb?.fileUrl;
-    }
+      primary.item.metadata = meta?.fileUrl ? await readMetaFile(meta.fileUrl) : undefined;
 
-    const attachmentSignature = `${meta?.signature ?? ''}:${thumb?.signature ?? ''}`;
-    const signature = computePrimarySignature(
-      `${primary.baseSignature}|attachment:${attachmentSignature}`,
-      meta?.fileUrl,
-      thumb?.fileUrl,
-    );
-    snapshot.set(primary.fileUrl, { item: primary.item, signature });
-  }
+      const attachmentSignature = `${meta?.signature ?? ''}:${thumb?.signature ?? ''}`;
+      const signature = computePrimarySignature(
+        `${primary.baseSignature}|attachment:${attachmentSignature}`,
+        meta?.fileUrl,
+        thumb?.fileUrl,
+        metadataDigest(primary.item.metadata),
+      );
+      snapshot.set(primary.fileUrl, { item: primary.item, signature });
+    }),
+  );
 
   return snapshot;
 }
@@ -330,7 +431,7 @@ export class FVWsConnection implements IFVWsConnection {
     return cloneState(this.state);
   }
 
-  public async fetchFileList(): Promise<IFVState> {
+  public async getState(): Promise<IFVState> {
     if (this.refreshInFlight) {
       return this.refreshInFlight;
     }
@@ -339,4 +440,8 @@ export class FVWsConnection implements IFVWsConnection {
     });
     return this.refreshInFlight;
   }
+}
+
+export function createFVWsConnection(options: FVConnectionOptions = {}): IFVWsConnection {
+  return new FVWsConnection(options);
 }
