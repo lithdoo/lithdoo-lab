@@ -156,6 +156,8 @@ curl -X POST "http://127.0.0.1:8081/file/blob" \
 
 - `fileList` 只包含主对象（文件/目录）。
 - `{name}.meta.toml` 与 `{name}.thumb.{ext}` 会挂载到对应主对象字段。
+- 缩略图扩展名仅支持小写：`png`、`jpg`、`jpeg`、`gif`、`svg`。
+- 非白名单扩展名（如 `webp`）或大写扩展名（如 `JPG`）会被忽略。
 - `.meta.toml` 可解析时会填充 `metadata` 字段（`info/extends`）。
 - 没有主对象的孤儿元数据/缩略图文件会被忽略，不进入 `fileList`。
 - 若 `.meta.toml` 解析失败，不会中断目录刷新，当前对象的 `metadata` 返回 `undefined`。

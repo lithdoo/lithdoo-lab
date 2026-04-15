@@ -46,6 +46,8 @@ interface FVConnectionOptions {
   onTargetDirChange?: IFVWsConnection['onTargetDirChange'];
 }
 
+const ALLOWED_THUMB_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg']);
+
 function isHiddenName(name: string): boolean {
   return name.startsWith('[hide]');
 }
@@ -96,7 +98,7 @@ function parseThumbBaseName(fileName: string): string | undefined {
     return undefined;
   }
   const ext = fileName.slice(markerIndex + marker.length);
-  if (!ext) {
+  if (!ext || ext !== ext.toLowerCase() || !ALLOWED_THUMB_EXTENSIONS.has(ext)) {
     return undefined;
   }
   return fileName.slice(0, markerIndex);

@@ -44,6 +44,9 @@ test('meta/thumb attachments follow primary entries only', async () => {
     await mkdir(join(root, 'album'));
     await writeFile(join(root, 'album.meta.toml'), ['[info]', 'title = "album"'].join('\n'));
     await writeFile(join(root, 'album.thumb.webp'), 'thumb');
+    await writeFile(join(root, 'album.thumb.jpg'), 'thumb');
+    await mkdir(join(root, 'albumUpper'));
+    await writeFile(join(root, 'albumUpper.thumb.JPG'), 'thumb');
 
     const conn = createFVWsConnection();
     await conn.changeTargetDir(pathToFileURL(root).toString());
@@ -64,8 +67,15 @@ test('meta/thumb attachments follow primary entries only', async () => {
     const album = state.fileList.find((item) => item.kind === 'directory' && item.name === 'album');
     assert.ok(album);
     assert.ok(album.metadataFileUrl?.endsWith('/album.meta.toml'));
-    assert.ok(album.thumbnailFileUrl?.endsWith('/album.thumb.webp'));
+    assert.ok(typeof album.thumbnailFileUrl === 'string');
+    assert.ok(album.thumbnailFileUrl.includes('album.thumb.jpg'));
+    assert.equal(album.thumbnailFileUrl.includes('album.thumb.webp'), false);
+    assert.equal(album.thumbnailFileUrl.includes('album.thumb.JPG'), false);
     assert.equal(album.metadata?.info?.title, 'album');
+
+    const albumUpper = state.fileList.find((item) => item.kind === 'directory' && item.name === 'albumUpper');
+    assert.ok(albumUpper);
+    assert.equal(albumUpper.thumbnailFileUrl, undefined);
 
     await conn.clearTargetDir();
   } finally {
