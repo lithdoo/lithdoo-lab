@@ -13,6 +13,7 @@ export function defineFileViewElement(tagName: string = DEFAULT_TAG): void {
 }
 
 export { FileViewElement };
+export type { FvSelectionChangedDetail } from './component/file-view.js';
 export type { FVDirectory, FVFile, FVMeta, FVMetaInfo, FVMetaLink, IFVState } from './types/fv-models.js';
 export {
   FvJsonRpcError,

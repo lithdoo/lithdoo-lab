@@ -20,6 +20,22 @@ function parseAutoReconnectTimeoutMs(attr: string | null): number | undefined {
   return n;
 }
 
+export interface FvSelectionChangedDetail {
+  fileUrls: readonly string[];
+}
+
+function setsEqualString(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const x of a) {
+    if (!b.has(x)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function applyFileListMutation(
   base: IFVState | undefined,
   type: 'add' | 'remove' | 'update',
@@ -50,6 +66,10 @@ function applyFileListMutation(
  * - `url` — WebSocket JSON-RPC endpoint (e.g. `ws://127.0.0.1:8081/rpc`).
  * - `target` — `targetDirFileUrl` passed to `fv.changeTargetDir` (typically `file:///...`). Empty / missing clears via `fv.clearTargetDir`.
  * - `auto-reconnect-timeout` — Milliseconds between reconnect attempts after an unexpected disconnect; empty / missing = no auto-reconnect.
+ *
+ * Selection (client-only, not RPC):
+ * - `selectedFileUrls` — read snapshot ordered like `currentState.fileList`.
+ * - `setSelectedFileUrls(urls)` — replace selection; only URLs present in `currentState.fileList` are kept.
  */
 export class FileViewElement extends HTMLElement {
   static get observedAttributes(): string[] {
@@ -60,6 +80,8 @@ export class FileViewElement extends HTMLElement {
 
   #session: FvJsonRpcSession | null = null;
   #lastState: IFVState | undefined;
+  /** Selected `fileUrl` values; subset of `#lastState.fileList` when state is defined. */
+  #selectedFileUrls = new Set<string>();
   #intentionalDisconnect = false;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -70,6 +92,36 @@ export class FileViewElement extends HTMLElement {
   /** Last known snapshot from RPC / notifications; `undefined` until first successful sync. */
   get currentState(): IFVState | undefined {
     return this.#lastState ? cloneState(this.#lastState) : undefined;
+  }
+
+  /**
+   * Selected entries as `fileUrl` strings, ordered like `currentState.fileList` (then subset).
+   * Empty when there is no `currentState` yet.
+   */
+  get selectedFileUrls(): readonly string[] {
+    return this.#snapshotSelectedOrdered();
+  }
+
+  /**
+   * Replace the current selection. Unknown URLs (not in `currentState.fileList`) are ignored.
+   * Clears selection with `[]`. Dispatches `fv-selection-changed` when the set changes.
+   */
+  public setSelectedFileUrls(urls: readonly string[]): void {
+    const allowed = this.#lastState
+      ? new Set(this.#lastState.fileList.map((e) => e.fileUrl))
+      : new Set<string>();
+    const next = new Set<string>();
+    for (const raw of urls) {
+      const u = raw.trim();
+      if (u.length > 0 && allowed.has(u)) {
+        next.add(u);
+      }
+    }
+    if (setsEqualString(this.#selectedFileUrls, next)) {
+      return;
+    }
+    this.#selectedFileUrls = next;
+    this.#emitSelectionChanged();
   }
 
   connectedCallback(): void {
@@ -213,6 +265,50 @@ export class FileViewElement extends HTMLElement {
         detail: { state: cloneState(this.#lastState) },
       }),
     );
+    this.#pruneSelectionToFileList();
+  }
+
+  #snapshotSelectedOrdered(): string[] {
+    const state = this.#lastState;
+    if (!state) {
+      return [];
+    }
+    const sel = this.#selectedFileUrls;
+    return state.fileList.map((e) => e.fileUrl).filter((url) => sel.has(url));
+  }
+
+  #emitSelectionChanged(): void {
+    this.dispatchEvent(
+      new CustomEvent<FvSelectionChangedDetail>('fv-selection-changed', {
+        bubbles: true,
+        composed: true,
+        detail: { fileUrls: this.#snapshotSelectedOrdered() },
+      }),
+    );
+  }
+
+  #pruneSelectionToFileList(): void {
+    const state = this.#lastState;
+    if (!state) {
+      if (this.#selectedFileUrls.size === 0) {
+        return;
+      }
+      this.#selectedFileUrls = new Set();
+      this.#emitSelectionChanged();
+      return;
+    }
+    const allowed = new Set(state.fileList.map((e) => e.fileUrl));
+    const next = new Set<string>();
+    for (const url of this.#selectedFileUrls) {
+      if (allowed.has(url)) {
+        next.add(url);
+      }
+    }
+    if (setsEqualString(this.#selectedFileUrls, next)) {
+      return;
+    }
+    this.#selectedFileUrls = next;
+    this.#emitSelectionChanged();
   }
 
   #handleFileChangeNotification(type: 'add' | 'remove' | 'update', file: FVFile | FVDirectory): void {
@@ -232,6 +328,7 @@ export class FileViewElement extends HTMLElement {
         detail: { state: cloneState(this.#lastState) },
       }),
     );
+    this.#pruneSelectionToFileList();
   }
 
   #handleTargetDirChangeNotification(state: IFVState): void {

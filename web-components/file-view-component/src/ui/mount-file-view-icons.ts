@@ -40,7 +40,7 @@ function render(
     showParent: parentUrl !== undefined && onParent !== undefined,
     onParent,
   });
-  const grid = createGrid(state, (dir: FVDirectory) => {
+  const grid = createGrid(state, fileView, (dir: FVDirectory) => {
     void fileView.setTargetDir(dir.fileUrl);
   });
   wrap.append(bar, grid);
@@ -55,7 +55,12 @@ export function mountFileViewIcons(options: MountFileViewIconsOptions): MountFil
     render(root, detail.state, fileView, showParentNav);
   };
 
+  const onSelection = () => {
+    render(root, fileView.currentState, fileView, showParentNav);
+  };
+
   fileView.addEventListener('fv-state-changed', onState);
+  fileView.addEventListener('fv-selection-changed', onSelection);
   render(root, fileView.currentState, fileView, showParentNav);
 
   return {
@@ -64,6 +69,7 @@ export function mountFileViewIcons(options: MountFileViewIconsOptions): MountFil
     },
     dispose() {
       fileView.removeEventListener('fv-state-changed', onState);
+      fileView.removeEventListener('fv-selection-changed', onSelection);
       root.replaceChildren();
     },
   };

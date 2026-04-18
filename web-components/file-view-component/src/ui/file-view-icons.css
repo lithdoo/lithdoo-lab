@@ -69,6 +69,16 @@
   background: #fafafa;
 }
 
+.fv-icons__cell--selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.fv-icons__cell--selected.fv-icons__cell--dir:hover {
+  border-color: #1d4ed8;
+  background: #dbeafe;
+}
+
 .fv-icons__cell:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
