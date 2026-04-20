@@ -11,7 +11,8 @@ import {
   scanDirectory
 } from './file-handler';
 import { callAI, callAIStream } from './ai-client';
-import { loadToolsJsonl } from './tools-loader';
+import { loadTools } from './tools-loader';
+import { buildPromptpileHookEnv, resolveAfterHookScript, runAfterHook } from './after-hook';
 import type { ToolCall } from './types';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
@@ -72,10 +73,11 @@ const printToolCallsLines = (toolCalls: ToolCall[] | undefined, quiet: boolean):
   }
 };
 
-async function main() {
+async function main(): Promise<void> {
   try {
     const cliOptions = getCliOptions();
     const config = loadConfig(cliOptions);
+    const cwd = process.cwd();
 
     if (!config.apiKey) {
       console.error('Error: AI API key is required');
@@ -111,9 +113,14 @@ async function main() {
 
     let tools;
     try {
-      tools = loadToolsJsonl(config.directory);
+      tools = loadTools({
+        directory: config.directory,
+        cwd,
+        toolsFileCli: config.toolsFileCli,
+        toolsFileEnv: config.toolsFileEnv
+      });
     } catch (e) {
-      console.error('Error loading .tools.jsonl:', e instanceof Error ? e.message : e);
+      console.error('Error loading tools:', e instanceof Error ? e.message : e);
       process.exit(1);
     }
 
@@ -180,10 +187,40 @@ async function main() {
         console.log(`Saved assistant reply: ${savedPath}`);
       }
     }
+
+    const scanAbs = path.resolve(cwd, config.directory);
+    const hookResolution = resolveAfterHookScript({
+      cwd,
+      scanAbs,
+      afterHookCli: config.afterHookCli,
+      afterHookEnv: config.afterHookEnv
+    });
+    if (hookResolution.status === 'warn_missing_explicit') {
+      console.error(`Warning: after-hook script not found: ${hookResolution.attempted}`);
+    } else if (hookResolution.status === 'run') {
+      const hookEnv = buildPromptpileHookEnv({
+        scanAbs,
+        resolvedOutput,
+        toolCalls,
+        format: config.format,
+        model: config.model,
+        quiet,
+        responseLength: response.length
+      });
+      await runAfterHook({
+        scriptPath: hookResolution.path,
+        scanAbs,
+        hookEnv,
+        quiet
+      });
+    }
   } catch (error) {
     console.error('Error:', error);
     process.exit(1);
   }
 }
 
-main();
+void main().catch(err => {
+  console.error('Error:', err);
+  process.exit(1);
+});

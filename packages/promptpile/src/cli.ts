@@ -16,10 +16,26 @@ program
   .option('-f, --format <format>', 'Output format (text or json)', 'text')
   .option('-i, --input', 'Read user input from terminal and append as next user message')
   .option('-c, --continue', 'Append assistant reply to next message file')
+  .option(
+    '--tools-file <path>',
+    'Load tools from this file only (.jsonl or .toml; relative paths resolve from cwd)'
+  )
+  .option(
+    '--after-hook-path <path>',
+    'Run this script file after success (relative paths resolve from cwd)'
+  )
   .parse(process.argv);
 
 export const getCliOptions = (): Partial<Config> => {
   const options = program.opts();
+  const rawToolsFile = options.toolsFile as string | undefined;
+  const toolsFileCli =
+    typeof rawToolsFile === 'string' && rawToolsFile.trim() !== ''
+      ? rawToolsFile.trim()
+      : undefined;
+  const rawHook = options.afterHookPath as string | undefined;
+  const afterHookCli =
+    typeof rawHook === 'string' && rawHook.trim() !== '' ? rawHook.trim() : undefined;
   return {
     directory: options.directory,
     model: options.model,
@@ -30,6 +46,8 @@ export const getCliOptions = (): Partial<Config> => {
     quiet: options.quiet as boolean | undefined,
     format: options.format as 'text' | 'json',
     continueMode: Boolean(options.continue),
-    inputMode: Boolean(options.input)
+    inputMode: Boolean(options.input),
+    toolsFileCli,
+    afterHookCli
   };
 };

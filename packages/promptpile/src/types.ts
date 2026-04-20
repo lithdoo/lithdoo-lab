@@ -58,6 +58,14 @@ export interface Config {
   inputMode: boolean;
   output?: string;
   quiet: boolean;
+  /** CLI `--tools-file`: relative to cwd when relative. */
+  toolsFileCli?: string;
+  /** Env `TOOLS_FILE`: relative to scan directory root when relative. */
+  toolsFileEnv?: string;
+  /** CLI `--after-hook-path`: relative to cwd when relative. */
+  afterHookCli?: string;
+  /** Env `AFTER_HOOK_PATH`: relative to scan directory when relative. */
+  afterHookEnv?: string;
 }
 
 export interface AiCallResult {

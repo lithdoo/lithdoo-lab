@@ -11,10 +11,11 @@
 - [环境要求](#环境要求)
 - [安装](#安装)
 - [消息文件约定（重要）](#消息文件约定重要)
-- [工具定义与历史工具调用（`.tools.jsonl` / `assistant.call` / `assistant.result`）](#工具定义与历史工具调用toolsjsonl--assistantcall--assistantresult)
+- [工具定义与历史工具调用（`.tools.toml` / `.tools.jsonl` / `assistant.call` / `assistant.result`）](#工具定义与历史工具调用toolstoml--toolsjsonl--assistantcall--assistantresult)
 - [配置说明](#配置说明)
 - [命令行用法](#命令行用法)
 - [输出格式](#输出格式)
+- [完成后钩子（after-hook）](#完成后钩子after-hook)
 - [与 OpenAI 兼容的网关](#与-openai-兼容的网关)
 - [开发](#开发)
 - [项目结构](#项目结构)
@@ -27,10 +28,11 @@
 ## 功能概览
 
 - **递归扫描**指定目录下所有符合命名规则的 `.md`、`.json`，以及可选的 `[idx]assistant.call.jsonl` / `[idx]assistant.result.jsonl`。
-- 在消息目录 **根目录** 可选读取 **`.tools.jsonl`**，作为请求体中的 `tools` 传给 API。
+- 在消息目录 **根目录** 可选读取 **`.tools.toml`** 或 **`.tools.jsonl`**（或通过 **`TOOLS_FILE` / `--tools-file`** 指定单一文件），作为请求体中的 `tools` 传给 API。
 - 按文件名中的 **序号** 与 **固定规则** 排序，拼成 Chat Completions 所需的 `messages`（含可选的 `tool_calls` 与 `tool` 消息）。
 - 通过 **`node-fetch`** 向兼容端点发起 `POST .../chat/completions` 请求（可选 `stream`）。
 - 模型若返回 **工具调用**，可在启用 `-o` 时一并写入 **`{basename}.calls.jsonl`**；`text` 模式下在正文流结束后向 stdout 逐行打印每条调用（JSON）；`json` 模式下工具调用出现在 stdout 的 **`tool_calls` 字段**中（`--quiet` 时均不打印终端输出，但若配置了 `-o` 仍写入文件）。
+- 可选在 **本轮成功结束**（含写 `-o`、`.calls.jsonl` 与可选 `--continue` 落盘）之后执行 **after-hook** 脚本（见 [完成后钩子](#完成后钩子after-hook)）。
 - 支持通过 **环境变量** 与 **命令行参数** 配置目录、模型、API Key、Base URL、输出格式。
 - 支持 **JSON** 或 **纯文本** 两种控制台输出，便于脚本集成或人工阅读。
 
@@ -43,11 +45,11 @@
 1. 解析 CLI 参数，并与 `.env` / 环境变量合并为最终配置（见 [配置说明](#配置说明)）。
 2. 校验 **API Key** 是否存在；不存在则退出并提示错误。
 3. 若配置了 `-o` / `OUTPUT_FILE`，在发起请求前 **创建输出目录并校验可写**；失败则退出且不调用 API。
-4. 若消息目录根下存在 **`.tools.jsonl`**，在请求前 **逐行解析**；任一行非法则退出且不调用 API。若文件不存在，请求中 **不传** `tools`。
+4. 按 [工具文件解析规则](#工具定义与历史工具调用toolstoml--toolsjsonl--assistantcall--assistantresult) 解析 `tools`（`.tools.toml` / `.tools.jsonl` 或显式路径）；**在调用 API 之前**完成校验，非法则退出；无需传 `tools` 时请求体中 **省略** `tools` 字段。
 5. 从配置的 `directory` 开始 **深度优先**遍历子目录，收集：
    - `^\[(\d+)\](.+?)\.(md|json)$`（扩展名不区分大小写）；
    - `^\[(\d+)\]assistant\.call\.jsonl$`、`^\[(\d+)\]assistant\.result\.jsonl$`。
-6. 按序号 **升序** 组装 `messages`：先将扫描到的所有文件按 **序号分组**（同一序号、不同子目录下的文件会进入 **同一组**），再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolsjsonl--assistantcall--assistantresult)）。
+6. 按序号 **升序** 组装 `messages`：先将扫描到的所有文件按 **序号分组**（同一序号、不同子目录下的文件会进入 **同一组**），再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--toolsjsonl--assistantcall--assistantresult)）。
 7. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
 
 普通消息的 **角色名** 会原样作为 `role` 传给 API。除 `tool` 外请使用网关接受的 role（常见为 `system`、`user`、`assistant`）。`tool` 消息来自 `[idx]assistant.result.jsonl` 的各行；若存在 `assistant.call` 但某 `tool_call_id` 在 result 中无对应行（或缺少 result 文件），程序会 **合成** 一条 `tool` 消息，其 `content` 为固定中文错误句（见下节 **「`[idx]assistant.result.jsonl`」** 中「与 `assistant.call` 对齐」说明）。
@@ -120,7 +122,7 @@ npm start -- --help
 ^\[(\d+)\]assistant\.result\.jsonl$
 ```
 
-消息目录 **根目录**（与 `-d` 一致）还可放置 **`.tools.jsonl`**（见下节）；该文件 **不会** 被算进「消息文件」条数，也不参与序号排序。
+消息目录 **根目录**（与 `-d` 一致）还可放置 **`.tools.toml`** 或 **`.tools.jsonl`**（见下节），或通过 **`TOOLS_FILE` / `--tools-file`** 指向包外单一文件；这些 **不会** 被算进「消息文件」条数，也不参与序号排序。
 
 ### 示例（普通消息）
 
@@ -153,15 +155,45 @@ npm start -- --help
 
 ---
 
-## 工具定义与历史工具调用（`.tools.jsonl` / `assistant.call` / `assistant.result`）
+## 工具定义与历史工具调用（`.tools.toml` / `.tools.jsonl` / `assistant.call` / `assistant.result`）
 
-### `.tools.jsonl`（仅消息目录根目录）
+### 工具文件来源、优先级与互斥
 
-- **位置**：与 `-d` / `DEFAULT_DIRECTORY` 指向的目录 **相同一层**，文件名 **`.tools.jsonl`**。**不递归**子目录查找第二份。
+| 来源 | 含义 | 相对路径解析基准 |
+|------|------|------------------|
+| CLI `--tools-file <path>` | **仅**加载该路径对应的单一文件 | **`process.cwd()`**（当前工作目录） |
+| 环境变量 `TOOLS_FILE` | **仅**加载该路径对应的单一文件 | **扫描目录根**（`-d` / `DEFAULT_DIRECTORY` 解析后的绝对路径） |
+| 二者均未配置有效路径 | 在扫描目录根 **默认探测** 是否存在 **`.tools.toml`** 或 **`.tools.jsonl`** | — |
+
+**优先级**：**`--tools-file`** > **`TOOLS_FILE`** > **默认根目录探测**。显式配置时 **不再** 在扫描根下自动查找 `.tools.toml` / `.tools.jsonl`。
+
+**默认模式下的互斥**：若 **未** 使用 CLI / 环境变量指定工具文件，且扫描根下 **同时** 存在 **`.tools.toml`** 与 **`.tools.jsonl`**，程序在调用 API **之前**报错退出（请只保留其一）。
+
+**显式路径**：文件 **必须存在** 且扩展名仅为 **`.toml`** 或 **`.jsonl`**，否则在调用 API **之前**报错退出（stderr 含绝对路径说明）。**无** `tools` 键的 TOML、或 `tools` / JSONL 解析结果为空数组时，与「不传 `tools`」相同。
+
+### `.tools.jsonl`（仅消息目录根目录，默认模式）
+
+- **位置**：与 `-d` / `DEFAULT_DIRECTORY` 指向的目录 **相同一层**，文件名 **`.tools.jsonl`**。**不递归**子目录查找第二份（除非通过 `--tools-file` / `TOOLS_FILE` 指向其它路径）。
 - **内容**：JSON Lines，**每行一个**对象，对应 OpenAI 请求体 `tools` 数组中的 **单个元素**（例如 `{"type":"function","function":{...}}`）。
 - **校验**：每行须为合法 JSON 对象，且包含非空字符串字段 **`type`**。若文件存在但任一行不满足，程序在调用 API **之前**报错退出。
-- **缺失**：若根目录无此文件，请求中 **不传** `tools`。
+- **缺失**：若根目录无此文件（且未配置另一来源的 TOML / 显式路径），请求中 **不传** `tools`。
 - **空文件或仅空白行**：无任何有效行时，与「不传 `tools`」相同（不附带 `tools` 字段）。
+
+### `.tools.toml`（仅消息目录根目录，默认模式）
+
+- **位置**：与 **`.tools.jsonl`** 相同，文件名为 **`.tools.toml`**；与 `.tools.jsonl` 在默认模式下 **二选一**（见上节互斥）。
+- **格式**：根级为表；使用 **`[[tools]]`**（或等价地，根键 **`tools`** 为表数组）。若 **`tools`** 缺失、为 **空数组**，或整个文件无有效工具项，则请求中 **不传** `tools`。
+- **校验**：**`tools`** 若存在则 **必须为数组**；每个元素须为表，且含非空字符串 **`type`**。若某元素的 **`function.parameters`** 为 **字符串**，会按 JSON 解析为对象（解析失败则在调用 API **之前**报错退出）。
+- **示例**：
+
+```toml
+[[tools]]
+type = "function"
+[tools.function]
+name = "get_weather"
+description = "Get weather"
+parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}'
+```
 
 ### `[idx]assistant.call.jsonl`（历史：该轮助手的 `tool_calls`）
 
@@ -233,6 +265,8 @@ npm start -- --help
 | `AI_API_BASE_URL` | API 根地址 | `https://api.openai.com/v1` |
 | `OUTPUT_FILE` | 将模型回复写入文件路径 | 空（默认不写文件） |
 | `QUIET` | 静默模式（`1/true/yes/on` 为启用） | 关闭 |
+| `AFTER_HOOK_PATH` | 完成后执行的脚本路径；**相对路径相对扫描目录根** | 空（走 CLI 或默认文件名） |
+| `TOOLS_FILE` | **仅**从此路径加载 `tools`（`.jsonl` 或 `.toml`）；**相对路径相对扫描目录根** | 空（走 CLI 或默认根目录 `.tools.toml` / `.tools.jsonl`） |
 
 ### CLI 参数
 
@@ -247,6 +281,8 @@ npm start -- --help
 | `-f, --format <format>` | `text` 或 `json` | `text` |
 | `-i, --input` | 在终端读取输入并保存为下一条 `user` 消息后再执行 | 关闭 |
 | `-c, --continue` | 将本次 assistant 回复追加为下一条消息文件 | 关闭 |
+| `--tools-file <path>` | **仅**从此路径加载 `tools`（`.jsonl` 或 `.toml`）；**相对路径相对当前工作目录** | 无 |
+| `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
 
 查看帮助：
 
@@ -290,7 +326,7 @@ node dist/index.js -d ./messages -m gpt-4o -f json
 node dist/index.js -d ./messages --continue
 ```
 
-启用后会在 `directory` 根目录下追加新文件：`[nextIdx]assistant.md`，用于下一轮继续对话。仅写入本轮模型 **正文**；**不会**自动写入 `assistant.call.jsonl` 或发起第二轮补全（与工具调用的深度集成见 [工具章节](#工具定义与历史工具调用toolsjsonl--assistantcall--assistantresult) 说明的「单次请求」范围）。
+启用后会在 `directory` 根目录下追加新文件：`[nextIdx]assistant.md`，用于下一轮继续对话。仅写入本轮模型 **正文**；**不会**自动写入 `assistant.call.jsonl` 或发起第二轮补全（与工具调用的深度集成见 [工具章节](#工具定义与历史工具调用toolstoml--toolsjsonl--assistantcall--assistantresult) 说明的「单次请求」范围）。
 
 ### 终端输入并执行
 
@@ -342,15 +378,17 @@ $env:QUIET="true"
 node dist/index.js -d ./messages -o ./outputs/last-response.txt
 ```
 
-### 带工具定义（`.tools.jsonl`）的最小目录示例
+### 带工具定义（`.tools.jsonl` 或 `.tools.toml`）的最小目录示例
 
-在消息目录 **根目录** 放置 `.tools.jsonl`（每行一个 OpenAI `tools` 数组元素），例如与 `[0]user.md` 一起：
+在消息目录 **根目录** 放置 **`.tools.jsonl`**（每行一个 OpenAI `tools` 数组元素）或 **`.tools.toml`**（`[[tools]]`），例如与 `[0]user.md` 一起：
 
 ```text
 messages/
   .tools.jsonl
   [0]user.md
 ```
+
+也可用 **`--tools-file ./path/custom.tools.jsonl`**（相对 **cwd**）或 **`TOOLS_FILE=./extras/tools.toml`**（相对 **扫描目录**）指向包外单一文件；二者优先级见 [工具文件来源](#工具定义与历史工具调用toolstoml--toolsjsonl--assistantcall--assistantresult)。
 
 `.tools.jsonl` 一行示例：
 
@@ -387,6 +425,63 @@ node dist/index.js -d ./messages -m gpt-4o -o ./outputs/out.txt
 
 ---
 
+## 完成后钩子（after-hook）
+
+在 **API 成功返回** 且已完成 **主输出 / `.calls.jsonl` 写入** 以及可选的 **`--continue` 追加 assistant 文件** 之后，若解析到要运行的脚本文件，则 **`spawn` 子进程** 执行该文件（非交互、不经过 shell 拼接命令串）。**API 失败或中途 `exit(1)` 时不会执行钩子。**
+
+### 配置来源与优先级
+
+| 来源 | 含义 | 相对路径解析基准 |
+|------|------|-------------------|
+| CLI `--after-hook-path <path>` | 脚本文件路径（非正则、非整条 shell 命令） | **`process.cwd()`**（当前工作目录） |
+| 环境变量 `AFTER_HOOK_PATH` | 脚本文件路径 | **扫描目录根**（`-d` / `DEFAULT_DIRECTORY` 解析后的绝对路径） |
+| 均未配置有效路径 | 在扫描目录根查找 **默认文件名**（见下） | — |
+
+优先级：**CLI** > **`AFTER_HOOK_PATH`** > **默认文件**。绝对路径在 CLI / env 中均 **不再** 拼相对基准。
+
+若 CLI 或 env 给出了非空路径但 **文件不存在**：向 **stderr** 打印一行 `Warning: after-hook script not found: <绝对路径>`，**不执行钩子**，主流程仍以成功结束（与「未配置钩子」区分在日志）。
+
+### 默认文件名（未配置 CLI 与 env 时）
+
+仅在 **扫描目录根** 查找第一个 **存在且为普通文件** 的项：
+
+- **Windows**（`win32`）：`.after-hook.ps1` → `.after-hook.bat` → `.after-hook.cmd`  
+- **macOS / Linux**（非 `win32`）：仅 **`.after-hook.sh`**
+
+Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，请用 CLI/env **显式**指定路径（实现上会用 `sh` 启动 `.sh`，需本机存在 `sh`）。
+
+### 子进程环境
+
+子进程 **`cwd`** 为扫描目录绝对路径；继承当前环境变量，并追加（供脚本读取）：
+
+| 变量 | 含义 |
+|------|------|
+| `PROMPTPILE_SCAN_DIRECTORY` | 扫描目录绝对路径 |
+| `PROMPTPILE_OUTPUT_FILE` | 主输出文件绝对路径；未使用 `-o` 则为空字符串 |
+| `PROMPTPILE_CALLS_FILE` | 若本轮写入了 `{basename}.calls.jsonl` 则为该文件绝对路径，否则空字符串 |
+| `PROMPTPILE_FORMAT` | `text` 或 `json` |
+| `PROMPTPILE_MODEL` | 当前模型 ID |
+| `PROMPTPILE_QUIET` | `0` 或 `1` |
+| `PROMPTPILE_HAS_TOOL_CALLS` | `0` 或 `1` |
+| `PROMPTPILE_RESPONSE_LENGTH` | 本轮正文字符串长度（数字字符串） |
+
+子进程 **stdout / stderr** 被管道收集：非 0 退出码或 stderr 有内容时会打印到主进程 **stderr**；**不会**写入主进程 stdout，以免破坏 `-f json` 等机器可读输出。
+
+### 启动方式（按扩展名）
+
+| 扩展名 | 行为（概要） |
+|--------|----------------|
+| `.ps1`（Windows） | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <脚本>` |
+| `.bat` / `.cmd`（Windows） | `cmd.exe /d /s /c <脚本>` |
+| `.sh` | `sh <脚本>` |
+| 其他（仅非 Windows 常见） | 直接 `spawn(脚本路径, [])`（需文件具备可执行权限等） |
+
+### 安全说明
+
+默认文件名或 `AFTER_HOOK_PATH` 放在 **消息目录** 内时，等同于「在该目录运行 promptpile 即可能执行本地脚本」。**不要**在不可信仓库或未审查目录中盲目运行；**不要**将 `AI_API_KEY` 等敏感信息写入钩子日志（本实现不会主动注入 API Key 到上述 `PROMPTPILE_*` 变量）。
+
+---
+
 ## 与 OpenAI 兼容的网关
 
 本工具使用 `node-fetch` 直接调用 HTTP 接口，通过 `AI_API_BASE_URL`（或 `-b`）与 `AI_API_KEY`（或 `-k`）指向任意 **OpenAI Chat Completions 兼容** 的服务端（如部分云厂商、本地 `vLLM`/`llama.cpp` 的 OpenAI 兼容层等）。请注意：
@@ -417,7 +512,8 @@ packages/promptpile/
 │   ├── cli.ts           # Commander：CLI 定义与选项解析
 │   ├── config.ts        # dotenv + 配置合并
 │   ├── file-handler.ts  # 目录扫描、拼 ChatMessage[]
-│   ├── tools-loader.ts  # 根目录 `.tools.jsonl` 加载与校验
+│   ├── tools-loader.ts  # `.tools.jsonl` / `.tools.toml`、显式路径、`loadTools` 编排
+│   ├── after-hook.ts    # 解析并执行完成后钩子脚本
 │   ├── ai-client.ts     # node-fetch 调用 chat/completions（含流式 tool_calls 合并）
 │   └── types.ts         # Config、ChatMessage、FileInfo 等
 ├── dist/                # 编译产物（运行入口）
@@ -443,7 +539,9 @@ packages/promptpile/
 |------|----------|----------|
 | `AI API key is required` | 未设置 `-k` 且环境变量无 `AI_API_KEY` | 设置密钥或传入 `-k` |
 | `No files found matching` … | 目录下无匹配的消息文件 | 检查是否至少存在 `[数字]角色.md`、`.json` 或 `assistant.call` / `assistant.result` 等匹配项 |
-| `Error loading .tools.jsonl` | 根目录 `.tools.jsonl` 存在但某行非法或缺少 `type` | 修正 JSON Lines 或临时移走该文件 |
+| `Error loading tools` | 工具文件（JSONL / TOML）非法、互斥、显式路径不存在或扩展名不对等 | 按 stderr 提示的绝对路径与错误信息修正；默认模式下勿同时放置 `.tools.toml` 与 `.tools.jsonl` |
+| `Warning: after-hook script not found` | CLI 或 `AFTER_HOOK_PATH` 指向的路径不存在 | 修正路径或删除配置 |
+| `after-hook exited with code` / `spawn error` | 脚本语法错误、无解释器、或 `.ps1` 被策略拦截 | 在本机直接运行同一脚本排查 |
 | `Cannot create or write to output directory` | `-o` 父目录无法创建或不可写 | 检查路径权限与磁盘 |
 | `assistant.result.jsonl line …` / `Invalid JSON`（来自拼消息阶段） | `[idx]assistant.result.jsonl` 某行非合法 JSON 或缺少 `tool_call_id` / `content` | 按报错行号修正该文件 |
 | HTTP 400 / invalid role | `role` 不是 API 支持的值 | 使用 `system` / `user` / `assistant` 等 |
