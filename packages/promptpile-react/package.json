@@ -1,0 +1,38 @@
+{
+  "name": "promptpile-react",
+  "version": "0.0.0",
+  "description": "ReAct loop and tool execution on top of promptpile (scaffold)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "promptpile-react": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts"
+  },
+  "keywords": [
+    "promptpile",
+    "react",
+    "agent",
+    "tools"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "dependencies": {
+    "commander": "^14.0.3",
+    "promptpile": "file:../promptpile"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}

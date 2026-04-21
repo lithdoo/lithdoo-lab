@@ -1,0 +1,1 @@
+export const PROMPTPILE_REACT_VERSION = '0.0.0';
