@@ -24,6 +24,10 @@ program
     '--after-hook-path <path>',
     'Run this script file after success (relative paths resolve from cwd)'
   )
+  .option(
+    '--tool-choice <value>',
+    'OpenAI tool_choice when tools are sent: none | auto | required | function:<name> (default: auto if unset)'
+  )
   .parse(process.argv);
 
 export const getCliOptions = (): Partial<Config> => {
@@ -36,6 +40,11 @@ export const getCliOptions = (): Partial<Config> => {
   const rawHook = options.afterHookPath as string | undefined;
   const afterHookCli =
     typeof rawHook === 'string' && rawHook.trim() !== '' ? rawHook.trim() : undefined;
+  const rawToolChoice = options.toolChoice as string | undefined;
+  const toolChoiceCli =
+    typeof rawToolChoice === 'string' && rawToolChoice.trim() !== ''
+      ? rawToolChoice.trim()
+      : undefined;
   return {
     directory: options.directory,
     model: options.model,
@@ -48,6 +57,7 @@ export const getCliOptions = (): Partial<Config> => {
     continueMode: Boolean(options.continue),
     inputMode: Boolean(options.input),
     toolsFileCli,
-    afterHookCli
+    afterHookCli,
+    toolChoice: toolChoiceCli
   };
 };

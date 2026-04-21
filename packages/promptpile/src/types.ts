@@ -37,6 +37,14 @@ export interface ToolResultLine {
 /** Single element of the API `tools` array (e.g. one line of `.tools.jsonl`). */
 export type ToolDefinition = Record<string, unknown>;
 
+/** OpenAI Chat Completions `tool_choice` string values (subset used by promptpile). */
+export type ChatApiToolChoiceString = 'none' | 'auto' | 'required';
+
+/** OpenAI Chat Completions `tool_choice` (string or forced function). */
+export type ChatApiToolChoice =
+  | ChatApiToolChoiceString
+  | { type: 'function'; function: { name: string } };
+
 export type FileKind = 'message' | 'assistant_call' | 'assistant_result';
 
 export interface FileInfo {
@@ -66,6 +74,11 @@ export interface Config {
   afterHookCli?: string;
   /** Env `AFTER_HOOK_PATH`: relative to scan directory when relative. */
   afterHookEnv?: string;
+  /**
+   * Raw `none` | `auto` | `required` | `function:<name>` from CLI `--tool-choice` or env `TOOL_CHOICE`.
+   * Parsed to {@link ChatApiToolChoice} when building the API body.
+   */
+  toolChoice?: string;
 }
 
 export interface AiCallResult {

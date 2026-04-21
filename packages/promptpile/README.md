@@ -267,6 +267,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `QUIET` | 静默模式（`1/true/yes/on` 为启用） | 关闭 |
 | `AFTER_HOOK_PATH` | 完成后执行的脚本路径；**相对路径相对扫描目录根** | 空（走 CLI 或默认文件名） |
 | `TOOLS_FILE` | **仅**从此路径加载 `tools`（`.jsonl` 或 `.toml`）；**相对路径相对扫描目录根** | 空（走 CLI 或默认根目录 `.tools.toml` / `.tools.jsonl`） |
+| `TOOL_CHOICE` | 与 OpenAI `tool_choice` 对齐：当请求体包含非空 `tools` 时写入 `tool_choice`；取值为 `none` \| `auto` \| `required` \| `function:<name>`；未设置时按 `auto` | 未设置时等价 `auto` |
 
 ### CLI 参数
 
@@ -283,6 +284,9 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `-c, --continue` | 将本次 assistant 回复追加为下一条消息文件 | 关闭 |
 | `--tools-file <path>` | **仅**从此路径加载 `tools`（`.jsonl` 或 `.toml`）；**相对路径相对当前工作目录** | 无 |
 | `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
+| `--tool-choice <value>` | OpenAI `tool_choice`：当且仅当本次请求包含非空 `tools` 时写入请求体。`none`（禁止工具调用）\|`auto`\|`required`\|`function:<name>`（强制指定工具）。**优先级**：CLI 高于 `TOOL_CHOICE`；均未设置时按 `auto` | 无（由 `TOOL_CHOICE` 或未设置时的 `auto` 决定） |
+
+与「不传 `tools`」的区别：`tool_choice` 仅在请求体带 `tools` 时发送；`none` 表示仍下发工具定义但禁止模型发起 `tool_calls`。自建网关若不支持 `required` 或强制 `function` 对象，可能返回 400，需以网关文档为准。
 
 查看帮助：
 

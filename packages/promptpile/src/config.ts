@@ -22,6 +22,7 @@ const trimEnv = (value: string | undefined): string | undefined => {
 export const loadConfig = (options: Partial<Config>): Config => {
   const afterHookEnv = trimEnv(process.env.AFTER_HOOK_PATH);
   const toolsFileEnv = trimEnv(process.env.TOOLS_FILE);
+  const toolChoiceEnv = trimEnv(process.env.TOOL_CHOICE);
   return {
     directory: options.directory || process.env.DEFAULT_DIRECTORY || './messages',
     model: options.model || process.env.AI_MODEL || 'gpt-3.5-turbo',
@@ -35,6 +36,7 @@ export const loadConfig = (options: Partial<Config>): Config => {
     toolsFileCli: options.toolsFileCli,
     toolsFileEnv,
     afterHookCli: options.afterHookCli,
-    afterHookEnv
+    afterHookEnv,
+    toolChoice: options.toolChoice ?? toolChoiceEnv
   };
 };

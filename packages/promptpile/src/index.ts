@@ -13,7 +13,8 @@ import {
 import { callAI, callAIStream } from './ai-client';
 import { loadTools } from './tools-loader';
 import { buildPromptpileHookEnv, resolveAfterHookScript, runAfterHook } from './after-hook';
-import type { ToolCall } from './types';
+import { effectiveToolChoiceForRequest, parseToolChoiceInput } from './tool-choice';
+import type { ChatApiToolChoice, ToolCall } from './types';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -124,6 +125,15 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    let toolChoiceForApi: ChatApiToolChoice | undefined;
+    try {
+      const parsed = parseToolChoiceInput(config.toolChoice);
+      toolChoiceForApi = effectiveToolChoiceForRequest(tools, parsed);
+    } catch (e) {
+      console.error('Error: Invalid tool choice:', e instanceof Error ? e.message : e);
+      process.exit(1);
+    }
+
     const messages = buildMessages(files);
 
     let resolvedOutput: string | undefined;
@@ -144,7 +154,8 @@ async function main(): Promise<void> {
         config.apiBaseUrl,
         config.model,
         messages,
-        tools
+        tools,
+        toolChoiceForApi
       );
       response = result.content;
       toolCalls = result.toolCalls;
@@ -165,6 +176,7 @@ async function main(): Promise<void> {
         config.model,
         messages,
         tools,
+        toolChoiceForApi,
         (chunk) => {
           if (!quiet) {
             process.stdout.write(chunk);

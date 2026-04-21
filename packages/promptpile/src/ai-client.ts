@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import type { AiCallResult, ChatMessage, ToolCall, ToolDefinition } from './types';
+import type { AiCallResult, ChatApiToolChoice, ChatMessage, ToolCall, ToolDefinition } from './types';
 
 interface ChatCompletionResponse {
   choices?: Array<{
@@ -34,7 +34,8 @@ const createPayload = (
   model: string,
   messages: ChatMessage[],
   stream: boolean,
-  tools: ToolDefinition[] | undefined
+  tools: ToolDefinition[] | undefined,
+  toolChoice: ChatApiToolChoice | undefined
 ) => {
   const body: Record<string, unknown> = {
     model,
@@ -43,6 +44,9 @@ const createPayload = (
   };
   if (tools && tools.length > 0) {
     body.tools = tools;
+    if (toolChoice !== undefined) {
+      body.tool_choice = toolChoice;
+    }
   }
   return body;
 };
@@ -135,7 +139,8 @@ export const callAI = async (
   apiBaseUrl: string,
   model: string,
   messages: ChatMessage[],
-  tools: ToolDefinition[] | undefined
+  tools: ToolDefinition[] | undefined,
+  toolChoice: ChatApiToolChoice | undefined
 ): Promise<AiCallResult> => {
   const url = `${trimTrailingSlash(apiBaseUrl)}/chat/completions`;
 
@@ -143,7 +148,7 @@ export const callAI = async (
     const res = await fetch(url, {
       method: 'POST',
       headers: createHeaders(apiKey),
-      body: JSON.stringify(createPayload(model, messages, false, tools))
+      body: JSON.stringify(createPayload(model, messages, false, tools, toolChoice))
     });
 
     const data = (await res.json()) as ChatCompletionResponse;
@@ -175,6 +180,7 @@ export const callAIStream = async (
   model: string,
   messages: ChatMessage[],
   tools: ToolDefinition[] | undefined,
+  toolChoice: ChatApiToolChoice | undefined,
   onChunk: (chunk: string) => void
 ): Promise<AiCallResult> => {
   const url = `${trimTrailingSlash(apiBaseUrl)}/chat/completions`;
@@ -183,7 +189,7 @@ export const callAIStream = async (
     const res = await fetch(url, {
       method: 'POST',
       headers: createHeaders(apiKey),
-      body: JSON.stringify(createPayload(model, messages, true, tools))
+      body: JSON.stringify(createPayload(model, messages, true, tools, toolChoice))
     });
 
     if (!res.ok) {
