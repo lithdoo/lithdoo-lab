@@ -35,6 +35,7 @@ export const loadConfig = (options: Partial<Config>): Config => {
     quiet: options.quiet ?? parseBoolEnv(process.env.QUIET),
     toolsFileCli: options.toolsFileCli,
     toolsFileEnv,
+    systemInjectFileCli: options.systemInjectFileCli,
     afterHookCli: options.afterHookCli,
     afterHookEnv,
     toolChoice: options.toolChoice ?? toolChoiceEnv

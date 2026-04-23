@@ -8,7 +8,7 @@ const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
 const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.call\.jsonl$/i;
 const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/i;
 
-const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
+export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
 /** YAML front matter: opening `---` on first line, closing `---` on a later line. */
 export const stripYamlFrontMatter = (raw: string): string => {

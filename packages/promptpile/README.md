@@ -50,7 +50,8 @@
    - `^\[(\d+)\](.+?)\.(md|json)$`（扩展名不区分大小写）；
    - `^\[(\d+)\]assistant\.call\.jsonl$`、`^\[(\d+)\]assistant\.result\.jsonl$`。
 6. 按序号 **升序** 组装 `messages`：先将扫描到的所有文件按 **序号分组**（同一序号、不同子目录下的文件会进入 **同一组**），再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--toolsjsonl--assistantcall--assistantresult)）。
-7. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
+7. 若指定 **`--system-inject-file`**：从该路径读取 **UTF-8** 文本（**相对路径相对当前工作目录**，与 `--tools-file` 一致）；去除 BOM；若扩展名为 **`.md`**（不区分大小写）再按消息文件规则去除 **YAML front matter**。读入后若全文 **仅空白** 则 **不修改** `messages`；否则若 **首条消息** 的 `role` 已是 `system`，则将注入正文放在前面并以空行与原有 `content` 拼接；否则在 **`messages` 最前** 插入一条 `{ role: "system", content: ... }`。文件不存在或不可读则 **退出并报错**。
+8. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
 
 普通消息的 **角色名** 会原样作为 `role` 传给 API。除 `tool` 外请使用网关接受的 role（常见为 `system`、`user`、`assistant`）。`tool` 消息来自 `[idx]assistant.result.jsonl` 的各行；若存在 `assistant.call` 但某 `tool_call_id` 在 result 中无对应行（或缺少 result 文件），程序会 **合成** 一条 `tool` 消息，其 `content` 为固定中文错误句（见下节 **「`[idx]assistant.result.jsonl`」** 中「与 `assistant.call` 对齐」说明）。
 
@@ -283,6 +284,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `-i, --input` | 在终端读取输入并保存为下一条 `user` 消息后再执行 | 关闭 |
 | `-c, --continue` | 将本次 assistant 回复追加为下一条消息文件 | 关闭 |
 | `--tools-file <path>` | **仅**从此路径加载 `tools`（`.jsonl` 或 `.toml`）；**相对路径相对当前工作目录** | 无 |
+| `--system-inject-file <path>` | 从该 UTF-8 文件注入 **system** 正文：与首条 `system` 合并或于最前插入；**相对路径相对当前工作目录**；仅空白则忽略；缺失则报错退出 | 无 |
 | `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
 | `--tool-choice <value>` | OpenAI `tool_choice`：当且仅当本次请求包含非空 `tools` 时写入请求体。`none`（禁止工具调用）\|`auto`\|`required`\|`function:<name>`（强制指定工具）。**优先级**：CLI 高于 `TOOL_CHOICE`；均未设置时按 `auto` | 无（由 `TOOL_CHOICE` 或未设置时的 `auto` 决定） |
 

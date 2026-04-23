@@ -70,6 +70,8 @@ export interface Config {
   toolsFileCli?: string;
   /** Env `TOOLS_FILE`: relative to scan directory root when relative. */
   toolsFileEnv?: string;
+  /** CLI `--system-inject-file`: relative to cwd when relative. */
+  systemInjectFileCli?: string;
   /** CLI `--after-hook-path`: relative to cwd when relative. */
   afterHookCli?: string;
   /** Env `AFTER_HOOK_PATH`: relative to scan directory when relative. */

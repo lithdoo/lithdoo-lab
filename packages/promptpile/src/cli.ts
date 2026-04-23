@@ -17,6 +17,10 @@ program
   .option('-i, --input', 'Read user input from terminal and append as next user message')
   .option('-c, --continue', 'Append assistant reply to next message file')
   .option(
+    '--system-inject-file <path>',
+    'Prepend or merge into first system message from this UTF-8 file (relative paths resolve from cwd)'
+  )
+  .option(
     '--tools-file <path>',
     'Load tools from this file only (.jsonl or .toml; relative paths resolve from cwd)'
   )
@@ -45,6 +49,11 @@ export const getCliOptions = (): Partial<Config> => {
     typeof rawToolChoice === 'string' && rawToolChoice.trim() !== ''
       ? rawToolChoice.trim()
       : undefined;
+  const rawSystemInject = options.systemInjectFile as string | undefined;
+  const systemInjectFileCli =
+    typeof rawSystemInject === 'string' && rawSystemInject.trim() !== ''
+      ? rawSystemInject.trim()
+      : undefined;
   return {
     directory: options.directory,
     model: options.model,
@@ -57,6 +66,7 @@ export const getCliOptions = (): Partial<Config> => {
     continueMode: Boolean(options.continue),
     inputMode: Boolean(options.input),
     toolsFileCli,
+    systemInjectFileCli,
     afterHookCli,
     toolChoice: toolChoiceCli
   };

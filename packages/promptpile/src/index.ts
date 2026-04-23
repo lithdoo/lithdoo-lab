@@ -14,6 +14,12 @@ import { callAI, callAIStream } from './ai-client';
 import { loadTools } from './tools-loader';
 import { buildPromptpileHookEnv, resolveAfterHookScript, runAfterHook } from './after-hook';
 import { effectiveToolChoiceForRequest, parseToolChoiceInput } from './tool-choice';
+import {
+  applySystemInject,
+  normalizeInjectFileContent,
+  readSystemInjectContent,
+  resolveSystemInjectPath
+} from './system-inject';
 import type { ChatApiToolChoice, ToolCall } from './types';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
@@ -134,7 +140,22 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const messages = buildMessages(files);
+    let messages = buildMessages(files);
+
+    if (config.systemInjectFileCli) {
+      try {
+        const resolved = resolveSystemInjectPath(cwd, config.systemInjectFileCli);
+        const raw = readSystemInjectContent(resolved);
+        const normalized = normalizeInjectFileContent(resolved, raw);
+        const trimmed = normalized.trim();
+        if (trimmed !== '') {
+          messages = applySystemInject(messages, trimmed);
+        }
+      } catch (e) {
+        console.error('Error loading system inject file:', e instanceof Error ? e.message : e);
+        process.exit(1);
+      }
+    }
 
     let resolvedOutput: string | undefined;
     if (config.output) {
