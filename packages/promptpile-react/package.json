@@ -1,38 +1,37 @@
 {
   "name": "promptpile-react",
-  "version": "0.0.0",
-  "description": "ReAct loop and tool execution on top of promptpile (scaffold)",
+  "version": "1.0.0",
+  "description": "在 promptpile CLI 之上的 agent 编排（子进程调用，非 npm 依赖）",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "bin": {
-    "promptpile-react": "dist/cli.js"
+    "promptpile-react": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",
-    "start": "node dist/cli.js",
-    "dev": "ts-node src/cli.ts"
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
   },
   "keywords": [
+    "promptpile-react",
     "promptpile",
     "react",
-    "agent",
-    "tools"
+    "command-line"
   ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "files": [
     "dist",
+    "README.md",
     "package.json"
   ],
   "dependencies": {
+    "@types/node": "^25.5.2",
     "commander": "^14.0.3",
-    "promptpile": "file:../promptpile"
+    "typescript": "^5.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.0.0"
+    "ts-node": "^10.9.2"
   }
 }
