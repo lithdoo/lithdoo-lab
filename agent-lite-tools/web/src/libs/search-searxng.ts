@@ -32,6 +32,19 @@ function normalizeUrl(baseUrl: string, searchPath: string): string {
   return `${base}${path}`
 }
 
+/**
+ * When the caller and `SearXNG_DEFAULT_ENGINES` both omit engines, SearXNG would
+ * otherwise use the instance default (often a single engine). Prefer broader,
+ * higher-quality backends first (must be enabled in the instance `settings.yml`).
+ * Override via `.env` or per-call `engines`.
+ */
+const DEFAULT_ENGINES_FALLBACK = [
+  'google',
+  'bing',
+  'brave',
+  'duckduckgo',
+] as const
+
 function mapResults(raw: unknown[]): SearxngSearchResultItem[] {
   const out: SearxngSearchResultItem[] = []
   for (const item of raw) {
@@ -71,7 +84,10 @@ export async function searchSearxng(
   const maxLimit = clampInt(config.maxLimit ?? 20, 1, 100)
   const limit = clampInt(input.limit ?? config.defaultLimit ?? 10, 1, maxLimit)
   const categories = normalizeList(input.categories ?? config.defaultCategories)
-  const engines = normalizeList(input.engines ?? config.defaultEngines)
+  let engines = normalizeList(input.engines ?? config.defaultEngines)
+  if (!engines?.length) {
+    engines = [...DEFAULT_ENGINES_FALLBACK]
+  }
   const safeSearch = input.safeSearch ?? config.defaultSafeSearch
   const language = input.language ?? config.defaultLanguage
   const timeoutMs = config.timeoutMs ?? 10_000

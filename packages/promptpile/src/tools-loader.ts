@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { parse as parseToml } from '@iarna/toml';
+import { isPromptpileDiagnostic } from './diagnostic-log';
 import type { ToolDefinition } from './types';
 
 const TOOLS_JSONL = '.tools.jsonl';
@@ -10,6 +11,53 @@ const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
 const isFile = (absPath: string): boolean =>
   fs.existsSync(absPath) && fs.statSync(absPath).isFile();
+
+/**
+ * Validate one flat tool entry and wrap it into the OpenAI Chat Completions
+ * `tools[]` shape: `{ type: "function", function: { name, description?, parameters? } }`.
+ *
+ * Flat entries must contain `name` and may contain `description` / `parameters`.
+ * Top-level `type` / `function` keys are rejected (the old nested form is no longer accepted).
+ */
+const normalizeFlatToolEntry = (
+  rec: Record<string, unknown>,
+  labelForErrors: string,
+  locator: string,
+): ToolDefinition => {
+  if ('type' in rec || 'function' in rec) {
+    throw new Error(
+      `${labelForErrors}: ${locator}: tool entries must be flat (no "type" or "function" fields). Use { name, description?, parameters? }.`,
+    );
+  }
+  if (typeof rec.name !== 'string' || rec.name.length === 0) {
+    throw new Error(`${labelForErrors}: ${locator}: missing non-empty string "name"`);
+  }
+  let parameters: unknown = rec.parameters;
+  if (typeof parameters === 'string') {
+    try {
+      parameters = JSON.parse(parameters) as unknown;
+    } catch {
+      throw new Error(`${labelForErrors}: ${locator}: invalid JSON in "parameters"`);
+    }
+  }
+  if (
+    parameters !== undefined &&
+    (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters))
+  ) {
+    throw new Error(
+      `${labelForErrors}: ${locator}: "parameters" must be an object (or JSON string of one)`,
+    );
+  }
+  const description = rec.description;
+  if (description !== undefined && typeof description !== 'string') {
+    throw new Error(`${labelForErrors}: ${locator}: "description" must be a string`);
+  }
+
+  const fn: Record<string, unknown> = { name: rec.name };
+  if (description !== undefined) fn.description = description;
+  if (parameters !== undefined) fn.parameters = parameters;
+  return { type: 'function', function: fn } as ToolDefinition;
+};
 
 const parseToolsJsonlContent = (raw: string, labelForErrors: string): ToolDefinition[] | undefined => {
   const lines = raw.split(/\r?\n/);
@@ -30,10 +78,7 @@ const parseToolsJsonlContent = (raw: string, labelForErrors: string): ToolDefini
       throw new Error(`${labelForErrors}: line ${i + 1} must be a JSON object`);
     }
     const rec = obj as Record<string, unknown>;
-    if (typeof rec.type !== 'string' || !rec.type) {
-      throw new Error(`${labelForErrors}: line ${i + 1} must include a non-empty string "type" field`);
-    }
-    tools.push(rec as ToolDefinition);
+    tools.push(normalizeFlatToolEntry(rec, labelForErrors, `line ${i + 1}`));
   }
 
   return tools.length > 0 ? tools : undefined;
@@ -42,22 +87,6 @@ const parseToolsJsonlContent = (raw: string, labelForErrors: string): ToolDefini
 const parseToolsJsonlFromAbsolutePath = (absPath: string): ToolDefinition[] | undefined => {
   const raw = stripBom(fs.readFileSync(absPath, 'utf8'));
   return parseToolsJsonlContent(raw, path.basename(absPath));
-};
-
-const normalizeFunctionParametersFromToml = (tool: ToolDefinition, labelForErrors: string): void => {
-  const fn = tool.function;
-  if (!fn || typeof fn !== 'object' || Array.isArray(fn)) {
-    return;
-  }
-  const fnRec = fn as Record<string, unknown>;
-  if (typeof fnRec.parameters !== 'string') {
-    return;
-  }
-  try {
-    fnRec.parameters = JSON.parse(fnRec.parameters) as unknown;
-  } catch {
-    throw new Error(`${labelForErrors}: invalid JSON in function.parameters`);
-  }
 };
 
 const parseToolsTomlContent = (raw: string, labelForErrors: string): ToolDefinition[] | undefined => {
@@ -90,12 +119,7 @@ const parseToolsTomlContent = (raw: string, labelForErrors: string): ToolDefinit
       throw new Error(`${labelForErrors}: tools[${i}] must be a table`);
     }
     const rec = item as Record<string, unknown>;
-    if (typeof rec.type !== 'string' || !rec.type) {
-      throw new Error(`${labelForErrors}: tools[${i}] must include a non-empty string "type" field`);
-    }
-    const def = rec as ToolDefinition;
-    normalizeFunctionParametersFromToml(def, labelForErrors);
-    tools.push(def);
+    tools.push(normalizeFlatToolEntry(rec, labelForErrors, `tools[${i}]`));
   }
   return tools;
 };
@@ -161,10 +185,16 @@ export const loadTools = (params: LoadToolsParams): ToolDefinition[] | undefined
 
   if (toolsFileCli) {
     const { abs, ext } = resolveExplicitToolsPath(toolsFileCli, cwd);
+    if (isPromptpileDiagnostic()) {
+      console.error('[promptpile] tools source: --tools-file', abs);
+    }
     return ext === '.jsonl' ? parseToolsJsonlFromAbsolutePath(abs) : parseToolsTomlFromAbsolutePath(abs);
   }
   if (toolsFileEnv) {
     const { abs, ext } = resolveExplicitToolsPath(toolsFileEnv, scanAbs);
+    if (isPromptpileDiagnostic()) {
+      console.error('[promptpile] tools source: TOOLS_FILE env', abs);
+    }
     return ext === '.jsonl' ? parseToolsJsonlFromAbsolutePath(abs) : parseToolsTomlFromAbsolutePath(abs);
   }
 
@@ -178,10 +208,19 @@ export const loadTools = (params: LoadToolsParams): ToolDefinition[] | undefined
     );
   }
   if (hasToml) {
+    if (isPromptpileDiagnostic()) {
+      console.error('[promptpile] tools source: default', tomlPath);
+    }
     return loadToolsToml(scanAbs);
   }
   if (hasJsonl) {
+    if (isPromptpileDiagnostic()) {
+      console.error('[promptpile] tools source: default', jsonlPath);
+    }
     return loadToolsJsonl(scanAbs);
+  }
+  if (isPromptpileDiagnostic()) {
+    console.error('[promptpile] tools source: (none under scan directory)', scanAbs);
   }
   return undefined;
 };

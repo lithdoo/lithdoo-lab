@@ -13,10 +13,19 @@
     "examples"
   ],
   "dependencies": {
+    "@agent-tool-lite/file": "file:../agent-lite-tools/file",
+    "@agent-tool-lite/search": "file:../agent-lite-tools/search",
+    "@agent-tool-lite/shell": "file:../agent-lite-tools/shell",
+    "@agent-tool-lite/web": "file:../agent-lite-tools/web",
+    "@iarna/toml": "^2.2.5",
     "hostra": "file:../packages/hostra",
     "promptpile": "file:../packages/promptpile",
     "tomlith": "file:../packages/tomlith",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "bun-types": "^1.1.0"
   },
   "author": "",
   "license": "ISC",

@@ -200,8 +200,12 @@ const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
   const callFile = group.find(f => f.fileKind === 'assistant_call');
   const resultFile = group.find(f => f.fileKind === 'assistant_result');
   const messageFiles = group.filter(f => f.fileKind === 'message');
+  const assistantMdFile = messageFiles.find(
+    f => f.role === 'assistant' && f.extension === 'md'
+  );
+  const otherMessageFiles = messageFiles.filter(f => f !== assistantMdFile);
 
-  for (const file of messageFiles) {
+  for (const file of otherMessageFiles) {
     const content = readMessageFileContent(file);
     messages.push({
       role: file.role,
@@ -213,13 +217,31 @@ const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
   if (callFile) {
     const raw = readUtf8FileFromDisk(callFile.path);
     callToolCalls = parseAssistantCallFile(raw);
-    if (callToolCalls.length > 0) {
-      messages.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: callToolCalls
-      });
-    }
+  }
+
+  const assistantText = assistantMdFile
+    ? readMessageFileContent(assistantMdFile)
+    : undefined;
+  const hasCalls = !!callToolCalls && callToolCalls.length > 0;
+  const hasMdFile = !!assistantMdFile;
+
+  if (hasCalls && hasMdFile) {
+    messages.push({
+      role: 'assistant',
+      content: assistantText ?? '',
+      tool_calls: callToolCalls
+    });
+  } else if (hasCalls) {
+    messages.push({
+      role: 'assistant',
+      content: null,
+      tool_calls: callToolCalls
+    });
+  } else if (hasMdFile) {
+    messages.push({
+      role: 'assistant',
+      content: assistantText ?? ''
+    });
   }
 
   const idsFromCall = callToolCalls && callToolCalls.length > 0 ? callToolCalls : undefined;
@@ -298,12 +320,63 @@ export const appendAssistantMessage = (
   directory: string,
   files: FileInfo[],
   content: string
-): string => {
-  return appendMessage(directory, files, 'assistant', content);
+): string | undefined => {
+  return appendAssistantTurn(directory, files, content, undefined).mdPath;
 };
 
 export const appendUserMessage = (directory: string, files: FileInfo[], content: string): string => {
   return appendMessage(directory, files, 'user', content);
+};
+
+/**
+ * Find the smallest index N (>= max(files.idx)+1) such that none of
+ * `[N]assistant.md`, `[N]assistant.call.jsonl`, `[N]assistant.result.jsonl`
+ * exist on disk; used by `appendAssistantTurn` so the markdown reply and the
+ * companion `.call.jsonl` always share the same `N`.
+ */
+export const nextAssistantIdx = (directory: string, files: FileInfo[]): number => {
+  const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
+  let idx = maxIdx + 1;
+  while (
+    fs.existsSync(path.join(directory, `[${idx}]assistant.md`)) ||
+    fs.existsSync(path.join(directory, `[${idx}]assistant.call.jsonl`)) ||
+    fs.existsSync(path.join(directory, `[${idx}]assistant.result.jsonl`))
+  ) {
+    idx += 1;
+  }
+  return idx;
+};
+
+/**
+ * Write an assistant turn under `--continue` semantics. `mdPath` and `callsPath`
+ * are independent and may both be set for a single `[N]`; `buildMessagesForIdx`
+ * merges them into one assistant message with both `content` and `tool_calls`:
+ *
+ * - When `content` is non-empty, write `[N]assistant.md`.
+ * - When `toolCalls` is non-empty, write `[N]assistant.call.jsonl`.
+ * - When neither is present, reserve nothing on disk.
+ */
+export const appendAssistantTurn = (
+  directory: string,
+  files: FileInfo[],
+  content: string,
+  toolCalls: ToolCall[] | undefined
+): { idx: number; mdPath?: string; callsPath?: string } => {
+  const idx = nextAssistantIdx(directory, files);
+  let mdPath: string | undefined;
+  let callsPath: string | undefined;
+
+  if (content.length > 0) {
+    mdPath = path.join(directory, `[${idx}]assistant.md`);
+    fs.writeFileSync(mdPath, content, 'utf8');
+  }
+  if (toolCalls && toolCalls.length > 0) {
+    callsPath = path.join(directory, `[${idx}]assistant.call.jsonl`);
+    const body = toolCalls.map(tc => JSON.stringify(tc)).join('\n') + '\n';
+    fs.writeFileSync(callsPath, body, 'utf8');
+  }
+
+  return { idx, mdPath, callsPath };
 };
 
 const appendMessage = (directory: string, files: FileInfo[], role: string, content: string): string => {

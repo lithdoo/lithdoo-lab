@@ -5,7 +5,7 @@ import path from 'path';
 import { getCliOptions } from './cli';
 import { loadConfig } from './config';
 import {
-  appendAssistantMessage,
+  appendAssistantTurn,
   appendUserMessage,
   buildMessages,
   scanDirectory
@@ -21,6 +21,11 @@ import {
   readSystemInjectContent,
   resolveSystemInjectPath
 } from './system-inject';
+import {
+  diagnosticLog,
+  isPromptpileDiagnostic,
+  toolNamesFromDefinitions
+} from './diagnostic-log';
 import type { ChatApiToolChoice, ToolCall } from './types';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
@@ -143,6 +148,18 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    const mergedNames = toolNamesFromDefinitions(tools);
+    diagnosticLog(
+      quiet,
+      `Tools (${mergedNames.length}): ${mergedNames.join(', ') || '(none)'}`
+    );
+    diagnosticLog(
+      quiet,
+      `tool_choice (effective): ${toolChoiceForApi === undefined ? '(omitted — no tools)' : JSON.stringify(toolChoiceForApi)}`
+    );
+    diagnosticLog(quiet, `cwd: ${cwd}`);
+    diagnosticLog(quiet, `scanAbs: ${path.resolve(cwd, config.directory)}`);
+
     let messages = buildMessages(files);
 
     if (config.systemInjectFileCli) {
@@ -164,6 +181,7 @@ async function main(): Promise<void> {
     if (config.output) {
       resolvedOutput = ensureOutputPaths(config.output);
     }
+    diagnosticLog(quiet, `output: ${resolvedOutput ?? '(stdout only — no -o / OUTPUT_FILE)'}`);
 
     if (!quiet) {
       console.log(`Calling AI API with ${messages.length} messages...`);
@@ -183,6 +201,13 @@ async function main(): Promise<void> {
       );
       response = result.content;
       toolCalls = result.toolCalls;
+
+      diagnosticLog(
+        quiet,
+        toolCalls?.length
+          ? `Model tool_calls: ${toolCalls.map(tc => tc.function.name || '(unnamed)').join(', ')}`
+          : 'Model tool_calls: (none)'
+      );
 
       if (resolvedOutput) {
         fs.writeFileSync(resolvedOutput, response, 'utf8');
@@ -210,6 +235,13 @@ async function main(): Promise<void> {
       response = result.content;
       toolCalls = result.toolCalls;
 
+      diagnosticLog(
+        quiet,
+        toolCalls?.length
+          ? `Model tool_calls: ${toolCalls.map(tc => tc.function.name || '(unnamed)').join(', ')}`
+          : 'Model tool_calls: (none)'
+      );
+
       if (resolvedOutput) {
         fs.writeFileSync(resolvedOutput, response, 'utf8');
         writeCallsFile(resolvedOutput, toolCalls);
@@ -217,10 +249,32 @@ async function main(): Promise<void> {
       printToolCallsLines(toolCalls, quiet);
     }
 
+    if (resolvedOutput && toolCalls && toolCalls.length > 0) {
+      diagnosticLog(quiet, `calls.jsonl path: ${callsPathForMainOutput(resolvedOutput)}`);
+    }
+
+    let continueMdPath: string | undefined;
+    let continueCallsPath: string | undefined;
     if (config.continueMode) {
-      const savedPath = appendAssistantMessage(config.directory, files, response);
-      if (!quiet) {
-        console.log(`Saved assistant reply: ${savedPath}`);
+      const saved = appendAssistantTurn(config.directory, files, response, toolCalls);
+      continueMdPath = saved.mdPath;
+      continueCallsPath = saved.callsPath;
+      if (saved.mdPath) {
+        if (!quiet) {
+          console.log(`Saved assistant reply: ${saved.mdPath}`);
+        } else {
+          diagnosticLog(quiet, `continue assistant.md: ${saved.mdPath}`);
+        }
+      }
+      if (saved.callsPath) {
+        if (!quiet) {
+          console.log(`Saved assistant tool_calls: ${saved.callsPath}`);
+        } else {
+          diagnosticLog(quiet, `continue assistant.call.jsonl: ${saved.callsPath}`);
+        }
+      }
+      if (!saved.mdPath && !saved.callsPath) {
+        diagnosticLog(quiet, 'continue: nothing to save (empty response, no tool_calls)');
       }
     }
 
@@ -231,9 +285,13 @@ async function main(): Promise<void> {
       afterHookCli: config.afterHookCli,
       afterHookEnv: config.afterHookEnv
     });
+    if (hookResolution.status === 'skip' && isPromptpileDiagnostic()) {
+      console.error('[promptpile] after-hook: skipped (no script resolved)');
+    }
     if (hookResolution.status === 'warn_missing_explicit') {
       console.error(`Warning: after-hook script not found: ${hookResolution.attempted}`);
     } else if (hookResolution.status === 'run') {
+      diagnosticLog(quiet, `after-hook: running ${hookResolution.path}`);
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,
         resolvedOutput,
@@ -241,7 +299,9 @@ async function main(): Promise<void> {
         format: config.format,
         model: config.model,
         quiet,
-        responseLength: response.length
+        responseLength: response.length,
+        continueMdPath,
+        continueCallsPath
       });
       await runAfterHook({
         scriptPath: hookResolution.path,

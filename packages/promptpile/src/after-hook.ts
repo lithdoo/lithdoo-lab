@@ -69,8 +69,22 @@ export const buildPromptpileHookEnv = (params: {
   model: string;
   quiet: boolean;
   responseLength: number;
+  /** Absolute path to `[N]assistant.md` written by `--continue`; empty when not in continue mode. */
+  continueMdPath?: string;
+  /** Absolute path to `[N]assistant.call.jsonl` written by `--continue` + tool_calls; empty otherwise. */
+  continueCallsPath?: string;
 }): NodeJS.ProcessEnv => {
-  const { scanAbs, resolvedOutput, toolCalls, format, model, quiet, responseLength } = params;
+  const {
+    scanAbs,
+    resolvedOutput,
+    toolCalls,
+    format,
+    model,
+    quiet,
+    responseLength,
+    continueMdPath,
+    continueCallsPath
+  } = params;
   const callsPath =
     resolvedOutput && toolCalls && toolCalls.length > 0
       ? callsPathForMainOutput(resolvedOutput)
@@ -80,6 +94,8 @@ export const buildPromptpileHookEnv = (params: {
     PROMPTPILE_SCAN_DIRECTORY: scanAbs,
     PROMPTPILE_OUTPUT_FILE: resolvedOutput ?? '',
     PROMPTPILE_CALLS_FILE: callsPath,
+    PROMPTPILE_ASSISTANT_MD_FILE: continueMdPath ?? '',
+    PROMPTPILE_ASSISTANT_CALL_FILE: continueCallsPath ?? '',
     PROMPTPILE_FORMAT: format,
     PROMPTPILE_MODEL: model,
     PROMPTPILE_QUIET: quiet ? '1' : '0',
