@@ -1,0 +1,38 @@
+{
+  "name": "promptpile-mcp",
+  "version": "0.0.0",
+  "description": "Promptpile 与 Model Context Protocol (MCP) 的适配层（当前为脚手架，MCP 尚未接线）",
+  "main": "dist/index.js",
+  "bin": {
+    "promptpile-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": [
+    "promptpile-mcp",
+    "promptpile",
+    "mcp",
+    "model-context-protocol",
+    "command-line"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "dependencies": {
+    "@types/node": "^25.5.2",
+    "commander": "^14.0.3",
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
+  }
+}
