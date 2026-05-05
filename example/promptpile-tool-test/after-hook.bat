@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 rem after-hook for promptpile-tool-test (chat-loop style):
-rem promptpile --continue + tool_calls already wrote messages\[N]assistant.call.jsonl,
+rem promptpile --continue + tool_calls already wrote messages\[N]assistant.calls.jsonl,
 rem so this hook only needs to run generate-tool-results.ts to fill in the matching
 rem [N]assistant.result.jsonl. No outputs/ dir, no copy step.
 

@@ -119,7 +119,7 @@ async function main(): Promise<void> {
     }
     if (files.length === 0) {
       console.error(
-        'Error: No files found matching message patterns ([idx]role.md/json, [idx]assistant.call.jsonl, [idx]assistant.result.jsonl)'
+        'Error: No files found matching message patterns ([idx]role.md/json, [idx]assistant.calls.jsonl, [idx]assistant.result.jsonl)'
       );
       process.exit(1);
     }
@@ -270,7 +270,7 @@ async function main(): Promise<void> {
         if (!quiet) {
           console.log(`Saved assistant tool_calls: ${saved.callsPath}`);
         } else {
-          diagnosticLog(quiet, `continue assistant.call.jsonl: ${saved.callsPath}`);
+          diagnosticLog(quiet, `continue assistant.calls.jsonl: ${saved.callsPath}`);
         }
       }
       if (!saved.mdPath && !saved.callsPath) {

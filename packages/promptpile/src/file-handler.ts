@@ -6,7 +6,7 @@ import type { ChatMessage, FileInfo, ToolCall, ToolResultLine } from './types';
 import { formatMissingToolResultContent } from './types';
 
 const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
-const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.call\.jsonl$/i;
+const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/i;
 const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/i;
 
 export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
@@ -330,16 +330,16 @@ export const appendUserMessage = (directory: string, files: FileInfo[], content:
 
 /**
  * Find the smallest index N (>= max(files.idx)+1) such that none of
- * `[N]assistant.md`, `[N]assistant.call.jsonl`, `[N]assistant.result.jsonl`
+ * `[N]assistant.md`, `[N]assistant.calls.jsonl`, `[N]assistant.result.jsonl`
  * exist on disk; used by `appendAssistantTurn` so the markdown reply and the
- * companion `.call.jsonl` always share the same `N`.
+ * companion `.calls.jsonl` (continue) always share the same `N`.
  */
 export const nextAssistantIdx = (directory: string, files: FileInfo[]): number => {
   const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
   let idx = maxIdx + 1;
   while (
     fs.existsSync(path.join(directory, `[${idx}]assistant.md`)) ||
-    fs.existsSync(path.join(directory, `[${idx}]assistant.call.jsonl`)) ||
+    fs.existsSync(path.join(directory, `[${idx}]assistant.calls.jsonl`)) ||
     fs.existsSync(path.join(directory, `[${idx}]assistant.result.jsonl`))
   ) {
     idx += 1;
@@ -353,7 +353,7 @@ export const nextAssistantIdx = (directory: string, files: FileInfo[]): number =
  * merges them into one assistant message with both `content` and `tool_calls`:
  *
  * - When `content` is non-empty, write `[N]assistant.md`.
- * - When `toolCalls` is non-empty, write `[N]assistant.call.jsonl`.
+ * - When `toolCalls` is non-empty, write `[N]assistant.calls.jsonl`.
  * - When neither is present, reserve nothing on disk.
  */
 export const appendAssistantTurn = (
@@ -371,7 +371,7 @@ export const appendAssistantTurn = (
     fs.writeFileSync(mdPath, content, 'utf8');
   }
   if (toolCalls && toolCalls.length > 0) {
-    callsPath = path.join(directory, `[${idx}]assistant.call.jsonl`);
+    callsPath = path.join(directory, `[${idx}]assistant.calls.jsonl`);
     const body = toolCalls.map(tc => JSON.stringify(tc)).join('\n') + '\n';
     fs.writeFileSync(callsPath, body, 'utf8');
   }

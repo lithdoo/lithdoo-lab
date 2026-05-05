@@ -1,5 +1,5 @@
 /**
- * Synthetic `tool` message `content` when `assistant.call` lists a `tool_call_id` but
+ * Synthetic `tool` message `content` when `[idx]assistant.calls.jsonl` lists a `tool_call_id` but
  * `[idx]assistant.result.jsonl` has no matching line (or the file is absent). Documented in README.
  */
 export const formatMissingToolResultContent = (idx: number, toolCallId: string): string =>

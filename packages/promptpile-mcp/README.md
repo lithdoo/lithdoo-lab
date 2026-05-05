@@ -2,12 +2,15 @@
 
 **promptpile** 的可选 **Model Context Protocol (MCP)** 适配层：把 MCP 服务器暴露的工具 Schema 转为 OpenAI Chat Completions 的 `tools` 形态，与 promptpile 现有「静态工具 + 合并扩展」流程衔接。
 
-**当前状态**：本包为 **空脚手架**（`promptpile-mcp` CLI 可跑通；**未** 安装 `@modelcontextprotocol/sdk`、**未** 实现 `tools/list` / `tools/call` 等接线）。设计见下文，实现留待后续迭代。
+**完整技术设计（CLI、`mcp.toml`、HTTP API、工作流）见 [DESIGN.md](./DESIGN.md)。**
+
+**当前状态**：**`launch`** 在本机 **`127.0.0.1`** 提供 **Koa** HTTP 网关；**`export-tools`** 已实现（`GET /v1/tools/export` → 扁平 `.tools.toml`）；**`exec-calls`** 已实现：**目录模式**在 **`--dir`** 下递归 **`*.calls.jsonl`** 并写 **`stem.result.jsonl`**；**单文件模式**用 **`--input`** 指定一个 **`.calls.jsonl`**，**`--output`** 可省略（默认同目录 **`stem.result.jsonl`**）。**`--input` 与 `--dir` 互斥**；未指定 `--dir` 时目录模式仍默认扫描当前工作目录。**默认**跳过已有配对 result；**`--overwrite-results`** 覆盖。详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)。当 **`mcp.toml` 含 `[servers.*]`** 时，**`launch`** 使用 **`createMcpGatewayBackend`**（stdio **`initialize` / `tools/list` / `tools/call`**）；**无 `[servers]`** 时仍为 **stub** 后端（与 [test-fixtures/minimal.toml](./test-fixtures/minimal.toml) 兼容）。另有 **`npm run mcp:smoke`** 做独立 stdio 冒烟（见 [开发与构建](#开发与构建)）。需要 **Node.js 18+**（`fetch` / `AbortSignal.timeout`）。
 
 ---
 
 ## 目录
 
+- [CLI 概要](#cli-概要)
 - [定位](#定位)
 - [与 promptpile 的衔接点](#与-promptpile-的衔接点)
 - [阶段 A：把 MCP 当作工具 Schema 提供者](#阶段-a把-mcp-当作工具-schema-提供者)
@@ -21,12 +24,26 @@
 
 ---
 
+## CLI 概要
+
+**目标形态**为三条子命令（详见 [DESIGN.md §3](./DESIGN.md#3-cli-规格)）：
+
+| 命令 | 作用 |
+|------|------|
+| **`launch`** | 加载 `mcp.toml`，启动 MCP 子进程与会话，监听 **本机 HTTP** 网关。 |
+| **`export-tools`** | 连接网关 `--base-url`，拉取工具列表并写入 **`.tools.toml`**（默认当前目录）；可选 **`--token`** 用于 Bearer 鉴权。 |
+| **`exec-calls`** | 连接网关：**目录模式** `--dir`（未指定时为 cwd）递归 **`*.calls.jsonl`**；**单文件模式** **`--input`**（与 **`--dir`** 互斥），**`--output`** 可选；写 **`stem.result.jsonl`**；默认跳过已有 result；**`--overwrite-results`** 覆盖；可选 **`--token`**。 |
+
+`launch` 的 **`port`** / **`token`** 可由命令行或 `mcp.toml`（如 `[gateway]`）提供：**命令行优先**；**`port` 合并后必填**；**`token` 可选**，仅在有值时启用网关 Bearer 鉴权。**`export-tools`** / **`exec-calls`** 在网关已启用鉴权时通过 **`--token`** 传入同一密钥，请求头 **`Authorization: Bearer <token>`**。
+
+---
+
 ## 定位
 
 | 项目 | 说明 |
 |------|------|
-| **promptpile** | 从消息目录组装 `messages`，可选附带 `tools`，调用 **单次** `chat/completions`；**不执行**工具函数；工具历史通过 `[idx]assistant.call.jsonl` / `[idx]assistant.result.jsonl` 等文件还原。 |
-| **本包** | 规划如何把 MCP 的 `tools/list` 映射为 Chat Completions 的 `function` 工具定义，以及如何（可选）通过 MCP 执行 `tools/call`；**不必**在首版修改 promptpile 行为即可通过「预生成工具文件」落地（见 [集成方案](#集成方案)）。 |
+| **promptpile** | 从消息目录组装 `messages`，可选附带 `tools`，调用 **单次** `chat/completions`；**不执行**工具函数；工具历史通过 `[idx]assistant.calls.jsonl` / `[idx]assistant.result.jsonl` 等文件还原。 |
+| **本包** | 通过 HTTP 网关持有 MCP 会话，将 `tools/list` 映射为 Chat Completions 的 `function` 工具定义，并（可选）经 `tools/call` 执行调用；**不修改** promptpile 源码（见 [集成方案](#集成方案)）。 |
 
 ---
 
@@ -38,13 +55,13 @@
 
 2. **合并扩展** — [`packages/promptpile/src/tools-merge.ts`](../../promptpile/src/tools-merge.ts) 的 `mergeSearchToolsPack()`：在已有工具之后追加一批定义，并按 **`function.name` 去重**（已存在的名字不再追加）。
 
-MCP 集成在语义上应贴近 **merge**：在 `mergeSearchToolsPack(tools)` **之后**（或与之一致的位置）合并 MCP 提供的工具，避免与静态工具、search pack 重名冲突。
+MCP 集成在语义上应贴近 **merge**：导出到 `.tools.toml` 时使用稳定前缀（如 `mcp__<serverId>__<toolName>`），避免与静态工具、search pack 重名冲突。详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)。
 
 ---
 
 ## 阶段 A：把 MCP 当作工具 Schema 提供者
 
-**目标**：在发起 Chat Completions 请求 **之前**，对已配置的 MCP 服务执行协议握手并拉取工具列表，映射为：
+**目标**：通过 **`launch`** 网关对已配置的 MCP 服务维持会话并拉取工具列表，映射为：
 
 ```json
 { "type": "function", "function": { "name": "...", "description": "...", "parameters": { ... } } }
@@ -58,16 +75,12 @@ MCP 集成在语义上应贴近 **merge**：在 `mergeSearchToolsPack(tools)` **
 2. `initialize` → 就绪后 `tools/list`。
 3. 将每条 MCP tool 转为一条 `ToolDefinition`（与 promptpile 中 `ToolDefinition` 用法一致）。
 
-**命名与去重**：
+**命名与去重**：见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)。
 
-- 多 server、多 tool 时易与 `.tools.toml` 或 search pack 中的 `name` 冲突。
-- 建议默认启用稳定前缀：`mcp__<serverId>__<toolName>`（`<serverId>` 为配置中的逻辑 id，非进程 pid）。
-- 可提供开关（例如 `flatNames: false`）在受控环境下关闭前缀（不推荐默认关闭）。
+**失败策略**（可配置于 `mcp.toml`，见 [DESIGN.md §4.3](./DESIGN.md#43-mcp-server-失败策略)）：
 
-**失败策略**（可配置）：
-
-- **strict**：任一 server `initialize` / `tools/list` 失败则整个 promptpile 退出。
-- **best-effort**：跳过失败的 server，stderr 告警；至少一个 server 成功则继续。
+- **strict**：任一 server 握手或列表失败则 **`launch` 启动失败**。
+- **best-effort**：跳过失败的 server 并记录日志；至少一个 server 成功则网关继续运行。
 
 ---
 
@@ -77,23 +90,24 @@ promptpile 单次运行仍是一次补全；**执行**模型返回的 `tool_call
 
 | 方式 | 说明 |
 |------|------|
-| **手工 / 脚本结果文件** | 与现有约定一致：将工具结果写入 `[idx]assistant.result.jsonl`，下一轮消息中带 `tool` 角色。仓库内示例可参考 `example/promptpile-tool-test/scripts/execute-tool-call.ts`（模式：读调用 → 执行 → 写 result）。 |
-| **after-hook 透传** | promptpile 完成后执行钩子；可将 `.calls.jsonl` 路径、消息目录等写入环境变量，由小型 **`mcp-exec`** 脚本读取每条 `tool_call`，对对应 MCP server 发 `tools/call`，再生成 result 文件供下次运行使用。 |
-| **内置多轮 `--mcp-exec`**（远期） | 在 promptpile 进程内：若响应含 `tool_calls`，则循环连接 MCP、执行、拼接 `messages` 再请求，直到无工具调用或达到轮数上限。实现与安全审计成本高，**不建议与阶段 A 同步上线**。 |
+| **`exec-calls` + 网关** | 目录扫描或 **`--input`** 单文件；经 **`POST /v1/calls/exec`**，写 **`stem.result.jsonl`**（详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)）。 |
+| **手工 / 脚本结果文件** | 与现有约定一致：将工具结果写入 `[idx]assistant.result.jsonl`。示例：`example/promptpile-tool-test/scripts/execute-tool-call.ts`。 |
+| **after-hook** | promptpile 完成后执行钩子；环境变量见 [`after-hook.ts`](../../promptpile/src/after-hook.ts)；钩子内可调用 `exec-calls`。 |
+| **内置多轮 `--mcp-exec`**（远期） | 在 promptpile 进程内循环执行工具直到无 `tool_calls`。实现与安全成本高，**不与首版网关同步**。 |
 
 ---
 
 ## 配置形态
 
-建议与 Cursor / 生态常见形态对齐，降低心智负担：
+建议与 Cursor / 生态常见形态对齐：
 
 | 来源 | 说明 |
 |------|------|
-| **`.mcp.json`** 或 **`mcp.toml`** | 放在消息目录根或项目根；格式待定，至少包含 `servers` 映射。 |
-| **环境变量** | 例如 `MCP_CONFIG` 指向配置文件绝对/相对路径。 |
-| **CLI** | 例如 `--mcp-config <path>`。 |
+| **`mcp.toml`** 或 **`.mcp.json`** | 至少包含 `servers`；网关 **`port` / `token`** 可置于 `[gateway]`；可选顶层 **`version`**（默认 1）；**`[gateway].port`** 可为整数或数字字符串（见 [DESIGN.md §4](./DESIGN.md#4-mcptoml-配置) 解析约定）。 |
+| **环境变量** | 例如 `MCP_CONFIG` 指向配置文件路径。 |
+| **`launch`** | `--config` / `--port` / `--token`。 |
 
-**优先级**（与 promptpile 中 `TOOLS_FILE` 思路同构）：**CLI > 环境变量 > 默认路径**（仅在配置存在时启用 MCP）。
+**优先级**：**命令行 > 配置文件 > 环境变量与默认路径**（细则见 [DESIGN.md §3.1](./DESIGN.md#31-launch)）。
 
 **每个 server 建议字段**：
 
@@ -102,65 +116,91 @@ promptpile 单次运行仍是一次补全；**执行**模型返回的 `tool_call
 | `command` / `args` | stdio 传输下的可执行文件与参数 |
 | `env` | 可选，子进程环境 |
 | `cwd` | 可选，工作目录 |
-| `initTimeoutMs` / `listTimeoutMs` | 握手与列表超时 |
+| `init_timeout_ms` / `list_timeout_ms` | 握手与列表超时（可继承 `[defaults]`） |
+| `transport` | 可选；当前仅 **`stdio`**（缺省） |
+
+**`[behavior].failure_policy`** 须为 **`strict`** 或 **`best-effort`**。**`[servers.<id>]`** 表键须匹配 **`[A-Za-z0-9_-]+`** 且 **不得含 `__`**（与网关 **`mcp__<id>__<tool>`** 反解析一致，详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)）。包内运行 **`npm test`** 可跑配置解析与 **`tool-name`** 路由单测。
 
 ---
 
 ## 集成方案
 
-**本仓库选定：方案 2** — 通过 CLI **预生成** `.tools.toml`（或 `.tools.jsonl`），再由 **promptpile** 用 `--tools-file` / `TOOLS_FILE` 加载。**不**把 MCP 合并逻辑写进 [`packages/promptpile/src/index.ts`](../../promptpile/src/index.ts)。
+**选定路线**：**常驻 `launch` 网关 + `export-tools` 生成 `.tools.toml` + `exec-calls` 处理调用**。不把 MCP 合并逻辑写进 [`packages/promptpile/src/index.ts`](../../promptpile/src/index.ts)。
 
-### 方案 2（选定）：零侵入 — 预生成工具文件
+### 工作流
 
-- `promptpile-mcp` 提供子命令（未来实现）：例如 `promptpile-mcp export-tools --config .mcp.json -o .tools.toml`。
-- 流程：连接 MCP → `initialize` / `tools/list` → 映射为 flat 工具条目 → 写入与 [`packages/promptpile/src/tools-loader.ts`](../../promptpile/src/tools-loader.ts) 兼容的 TOML/JSONL。
-- 用户运行 **promptpile** 时：`promptpile --tools-file .tools.toml ...`（或设置 `TOOLS_FILE`）。
-- **优点**：不改 promptpile 源码；职责清晰（导出与补全分离）。
-- **缺点**：工具列表非实时；MCP 侧增删改工具后需重新执行 export。
+1. `promptpile-mcp launch --config mcp.toml`（并指定或配置 **`port`**）。
+2. `promptpile-mcp export-tools --base-url http://127.0.0.1:<port> [-o .tools.toml]`
+3. `promptpile --tools-file .tools.toml ...`
+4. 若模型产生 tool calls：`promptpile-mcp exec-calls --base-url http://127.0.0.1:<port> [--dir <目录>]`，或单文件：`exec-calls --base-url … --input path/to/x.calls.jsonl [--output path/to/x.result.jsonl]`
+
+**优点**：不改 promptpile；网关复用 MCP 会话；工具列表在重新 `export-tools` 前可能滞后于 MCP 侧变更。
 
 ```mermaid
 flowchart LR
-  subgraph export [Export offline]
+  subgraph gateway [launch]
     MCP[MCP servers]
-    List[tools/list]
-    Map[Map to flat tools]
-    File[.tools.toml or .tools.jsonl]
-    MCP --> List --> Map --> File
+    HTTP[HTTP 127.0.0.1]
+    MCP --> HTTP
   end
-  subgraph run [promptpile run]
-    Load[loadTools via tools-file]
-    Merge[mergeSearchToolsPack]
+  subgraph export [export-tools]
+    File[.tools.toml]
+    HTTP -->|/v1/tools/export| File
+  end
+  subgraph run [promptpile]
+    Load[loadTools]
     API[chat/completions]
-    File -.->|user passes path| Load
-    Load --> Merge --> API
+    File --> Load --> API
+  end
+  subgraph exec [exec-calls]
+    Calls["*.calls.jsonl"]
+    Res["stem.result.jsonl"]
+    Calls --> HTTP
+    HTTP -->|/v1/calls/exec| Res
   end
 ```
 
-### 方案 1（未选）：库合并进 promptpile
+### 未选方案：库合并进 promptpile
 
-在 [`packages/promptpile/src/index.ts`](../../promptpile/src/index.ts) 中于 `mergeSearchToolsPack(tools)` 之后调用 **`mergeMcpToolsPack(tools, options)`**：单次命令内动态拉取 MCP 工具并合并。
-
-- **优点**：一条命令、工具列表始终最新。
-- **缺点**：需改 promptpile、依赖与生命周期更重。
-
-当前路线 **不采用** 方案 1；若将来产品需要「一体化 CLI」，可再评估。
+在 `mergeSearchToolsPack` 之后动态拉取 MCP 工具：一条命令即可，但需改 promptpile 与依赖生命周期。**当前不采用**；若需要可另起设计。
 
 ---
 
 ## 安全
 
-- **stdio MCP = 执行任意命令**：配置文件中的 `command` / `args` 必须与运行 promptpile 的用户权限一致；仅使用 **信任的** 配置与仓库。
-- **敏感环境**：`env` 字段可能含密钥；避免把含密钥的配置提交到版本库。
-- **网络类 MCP**（HTTP/SSE 等，若后续支持）：需 TLS、允许列表与超时，防止 SSRF / 资源耗尽。
+- **stdio MCP = 执行任意命令**：仅使用可信 `mcp.toml`；勿提交含密钥的 `env`。
+- **HTTP 网关**：默认本机回环；共享环境建议配置 **`token`**。详见 [DESIGN.md §9](./DESIGN.md#9-安全)。
+- **网络类 MCP**（HTTP/SSE 等，若后续支持）：需 TLS、允许列表与超时。
 
 ---
 
 ## 后续待办
 
-- [ ] 引入 `@modelcontextprotocol/sdk`（或等价实现），完成 stdio client 与 `initialize` / `tools/list`。
-- [ ] 实现 `mergeMcpToolsPack`（或独立 export CLI）与配置解析。
-- [ ] 与 promptpile 主流程接线（方案 1）或完善 export 子命令（方案 2）。
-- [ ] （可选）文档化 after-hook 环境变量约定与示例 `mcp-exec` 脚本。
+- [x] 引入 `@modelcontextprotocol/sdk`；stdio 会话封装见 [`src/mcp/stdio-session.ts`](./src/mcp/stdio-session.ts)，网关聚合见 [`src/http/mcp-backend.ts`](./src/http/mcp-backend.ts)。
+- [x] **`launch`** 在配置含 **`servers`** 时接入真实 MCP；否则 stub。
+- [x] after-hook 示例与环境变量说明（见下文 **After-hook**）。
+
+---
+
+## After-hook（与 promptpile 联用）
+
+promptpile 在运行结束时可执行钩子脚本，并向子进程注入环境变量（实现见 [`packages/promptpile/src/after-hook.ts`](../promptpile/src/after-hook.ts) 中 **`buildPromptpileHookEnv`**）。与本网关联用时，建议在钩子中自行约定 **`PROMPTPILE_MCP_BASE_URL`**（及可选 **`PROMPTPILE_MCP_TOKEN`**），再调用 **`promptpile-mcp exec-calls`**。
+
+| 变量（promptpile 注入） | 含义 |
+|-------------------------|------|
+| **`PROMPTPILE_SCAN_DIRECTORY`** | 扫描目录（消息目录）绝对路径 |
+| **`PROMPTPILE_HAS_TOOL_CALLS`** | 本次输出是否含 **`tool_calls`**：`1` / `0` |
+| **`PROMPTPILE_CALLS_FILE`** | 主输出旁 **`*.calls.jsonl`** 路径（有调用时；否则为空） |
+| **`PROMPTPILE_OUTPUT_FILE`** | 主输出文件路径 |
+
+| 变量（自建，示例脚本约定） | 含义 |
+|---------------------------|------|
+| **`PROMPTPILE_MCP_BASE_URL`** | 已运行的 **`launch`** 网关根 URL，例如 **`http://127.0.0.1:8765`** |
+| **`PROMPTPILE_MCP_TOKEN`** | 可选，与 **`mcp.toml`** **`[gateway].token`** 一致 |
+
+示例 Bash 脚本（可复制到项目根并 **`chmod +x`**，或在 promptpile 配置里指向该路径）：[`docs/after-hook.example.sh`](./docs/after-hook.example.sh)。逻辑：若 **`PROMPTPILE_HAS_TOOL_CALLS=1`** 且 **`PROMPTPILE_MCP_BASE_URL`** 已设置，则 **`exec-calls --dir "$PROMPTPILE_SCAN_DIRECTORY"`**。
+
+**Windows（PowerShell）**：可在钩子中设置 **`$env:PROMPTPILE_MCP_BASE_URL='http://127.0.0.1:8765'`** 后调用 **`npx promptpile-mcp exec-calls ...`**；环境变量名与 Bash 相同。
 
 ---
 
@@ -172,13 +212,54 @@ npm install
 npm run build
 ```
 
+### 回归检查（结项验收）
+
+合并或发版前建议按需执行：
+
+1. **必跑**：**`npm run test`**（内含 **`npm run build`**，再跑 Node **`node:test`**：`mcp-config`、`tool-name` 单元测试；退出码须为 **0**）。
+2. **可选**：**`npm run test:smoke`**（先构建，再跑下文 **`mcp:smoke`**；依赖 **`npx`**，首次可能下载包，需联网）。
+3. **可选**：端到端网关——配置含 **`[servers.*]`** 的 **`mcp.toml`** 启动 **`launch`**，另一终端 **`export-tools`** 或 **`curl`** 访问 **`GET /health`**、`GET /v1/tools/export`（详见下文 **`launch` + 真实 MCP**）。
+
+### MCP stdio 冒烟（阶段 1）
+
+在 **`npm run build`** 之后，用官方 filesystem server 验证 **连接 → `tools/list` → 退出**（未传 **`--command`** 时脚本会默认执行 **`npx -y @modelcontextprotocol/server-filesystem <临时目录>`**，首次运行会下载包，需联网）：
+
+```bash
+npm run mcp:smoke
+```
+
+指定自定义 MCP 进程（示例：与本仓库无关的任意 stdio server）：
+
+```bash
+npm run mcp:smoke -- --command npx --args -y --args @modelcontextprotocol/server-filesystem --args C:\path\to\allowed\dir
+```
+
+也可用环境变量简化参数：**`PROMPTPILE_MCP_SMOKE_COMMAND`**、**`PROMPTPILE_MCP_SMOKE_ARGS`**（值为 **JSON 数组字符串**，例如 `["-y","@modelcontextprotocol/server-filesystem","C:\\temp\\mcp-root"]`）。可选 **`--call <toolName>`** 与 **`--call-args '{"path":"..."}'`** 在列出工具后再调用一次 `tools/call`。详见 **`node dist/scripts/mcp-smoke.js --help`**。
+
+### `launch` + 真实 MCP（验收）
+
+在 **`mcp.toml`** 中配置 **`[servers.<id>]`**（至少一个），例如：
+
+```toml
+[gateway]
+port = 8765
+
+[servers.fs]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "C:\\temp\\mcp-allowed"]
+```
+
+然后 **`npm run build`**，终端 A：**`promptpile-mcp launch --config <路径>`**（可加 **`--port`** 覆盖）；终端 B：**`promptpile-mcp export-tools --base-url http://127.0.0.1:8765`** 应得到非空 **`.tools.toml`**。失败策略、超时、**`flat_names`** 见 [DESIGN.md §4](./DESIGN.md#4-mcptoml-配置)。
+
+运行 **`export-tools`** / **`exec-calls`** 需要 **Node.js 18+**（内置 `fetch` / `AbortSignal.timeout`）。
+
 本地 CLI：
 
 ```bash
 npx promptpile-mcp --help
 ```
 
-当前运行仅输出脚手架提示，无 MCP 行为。
+`launch` 启动网关后，可在另一终端执行 **`promptpile-mcp export-tools --base-url http://127.0.0.1:<port> [-o .tools.toml] [--token …]`** 生成工具文件。亦可继续用 `curl` 验收 HTTP（见 [DESIGN.md](./DESIGN.md) §5）；示例配置见 [test-fixtures/minimal.toml](./test-fixtures/minimal.toml)。
 
 ---
 

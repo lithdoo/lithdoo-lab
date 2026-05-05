@@ -49,7 +49,7 @@
 |------|------|
 | **core 注入** | 将 `prompts.core` 写入 **临时 `.md` 文件**（`os.tmpdir()`），向本次 argv 追加 **`--system-inject-file` 绝对路径**；调用结束删除临时文件。不在 `-d` 消息目录内新增 `[idx]*.md` 承载 core。 |
 | **`-c` / `--continue`** | 当 CLI 传入 `-c`（`continueMode` 为真）时，**仅在本方法**拼出的 argv 拷贝末尾追加 `-c`，交给 `promptpile` 以保持与消息目录续写语义一致。主流程 `buildForwardedPromptpileArgs()` 仍 **不** 转发 `-c`。 |
-| **工具与落盘** | `[idx]assistant.call.jsonl` / `[idx]assistant.result.jsonl` 及工具执行由 **`promptpile`** 负责；本方法 **不写**、不解析上述文件。 |
+| **工具与落盘** | `[idx]assistant.calls.jsonl` / `[idx]assistant.result.jsonl` 及工具执行由 **`promptpile`** 负责；本方法 **不写**、不解析上述文件。 |
 | **错误** | 子进程启动失败或非零退出 → **`throw PromptpileReactInvocationError`**（`phase: 'thought'`）。**不修改** `currentStep` / `stopReason`（由 `nextStep` 的 `try/catch` 或外层处理）。 |
 
 ## ReAct 观察阶段（`PromptpileReactRuntime.reactObserveProcess`）

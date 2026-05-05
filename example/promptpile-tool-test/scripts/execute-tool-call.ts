@@ -116,7 +116,7 @@ registerUnique(toolMap, webFetchTool)
 registerUnique(toolMap, searxngSearchTool)
 
 /**
- * Execute one tool call from `[idx]assistant.call.jsonl`.
+ * Execute one tool call from `[idx]assistant.calls.jsonl`.
  *
  * The returned string becomes the `content` field of the corresponding line
  * in `[idx]assistant.result.jsonl`. Non-string results are JSON-stringified.

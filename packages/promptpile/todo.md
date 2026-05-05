@@ -38,7 +38,7 @@
 | 文件 | 作用 |
 |------|------|
 | `[idx]assistant.md` | 现有规则：assistant 的文本 `content`。 |
-| `[idx]assistant.call.jsonl` | 记录该轮 assistant 的 **tool_calls**（格式需与 API 对齐或可解析为 `tool_calls`）。 |
+| `[idx]assistant.calls.jsonl` | 记录该轮 assistant 的 **tool_calls**（格式需与 API 对齐或可解析为 `tool_calls`）。 |
 | `[idx]assistant.result.jsonl` | 每行一条 **tool** 角色所需信息（至少含 `tool_call_id` 与 `content`；完整格式见下节）。 |
 
 **缺失规则**：若某个文件不存在则 **忽略**该部分（不单独报错）。  
@@ -46,7 +46,7 @@
 
 **边界情况（需实现时二选一并写进 README）**：
 
-- 存在 `[idx]assistant.call.jsonl` 但 **不存在** `[idx]assistant.result.jsonl`：建议视为「全部 tool 结果缺失」→ 对每个 `tool_call_id` 均补 error（与上条一致）。
+- 存在 `[idx]assistant.calls.jsonl` 但 **不存在** `[idx]assistant.result.jsonl`：建议视为「全部 tool 结果缺失」→ 对每个 `tool_call_id` 均补 error（与上条一致）。
 
 ---
 
@@ -70,7 +70,7 @@
 对同一 `idx` 若存在 `[idx]assistant.md`：
 
 1. 追加 assistant 文本消息（来自 `.md`）。
-2. 若存在 `[idx]assistant.call.jsonl`：解析并追加带 **`tool_calls`** 的 assistant 消息（是否与上一条合并由实现决定，但**同一 idx 内顺序必须固定且文档化**）。
+2. 若存在 `[idx]assistant.calls.jsonl`：解析并追加带 **`tool_calls`** 的 assistant 消息（是否与上一条合并由实现决定，但**同一 idx 内顺序必须固定且文档化**）。
 3. 若存在 `[idx]assistant.result.jsonl`：按行追加 **`tool`** 消息；缺省 id 用 error 占位补齐。
 
 其它 `[idx]user.md` / `[idx]system.md` 等仍按现有序号与角色规则插入；**与 OpenAI 要求一致**：`tool` 消息必须跟在带对应 `tool_calls` 的 assistant 之后。
@@ -99,7 +99,7 @@
    - 非流式或流式路径均能解析 **`message.tool_calls`** / 流式 **`delta.tool_calls`** 的合并。
    - 流式结束后统一得到完整 `tool_calls` 再落盘/打印。
 3. **`file-handler.ts`（或新模块）**：
-   - 扩展目录扫描：除 `^\[(\d+)\](.+?)\.(md|json)$` 外，识别 `[idx]assistant.call.jsonl`、`[idx]assistant.result.jsonl`。
+   - 扩展目录扫描：除 `^\[(\d+)\](.+?)\.(md|json)$` 外，识别 `[idx]assistant.calls.jsonl`、`[idx]assistant.result.jsonl`。
    - 将「文件列表 → `messages[]`」的构建逻辑升级为支持上述三元组及插入顺序。
 4. **`index.ts` / CLI**：
    - 解析 `-o` 时预校验路径；决定 `{basename}.calls.jsonl` 路径。

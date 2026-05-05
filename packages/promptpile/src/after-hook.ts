@@ -71,7 +71,7 @@ export const buildPromptpileHookEnv = (params: {
   responseLength: number;
   /** Absolute path to `[N]assistant.md` written by `--continue`; empty when not in continue mode. */
   continueMdPath?: string;
-  /** Absolute path to `[N]assistant.call.jsonl` written by `--continue` + tool_calls; empty otherwise. */
+  /** Absolute path to `[N]assistant.calls.jsonl` written by `--continue` + tool_calls; empty otherwise. */
   continueCallsPath?: string;
 }): NodeJS.ProcessEnv => {
   const {

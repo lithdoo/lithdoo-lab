@@ -34,7 +34,7 @@ bun promptpile-tool-test/scripts/generate-tools-toml.ts
 
 ## 补齐历史 result.jsonl
 
-当 `messages/` 下存在 `[idx]assistant.call.jsonl` 但对应的 `[idx]assistant.result.jsonl` 缺失时，可用这个脚本批量补齐（after-hook 内部也是它）：
+当 `messages/` 下存在 `[idx]assistant.calls.jsonl` 但对应的 `[idx]assistant.result.jsonl` 缺失时，可用这个脚本批量补齐（after-hook 内部也是它）：
 
 ```bash
 cd example
@@ -44,7 +44,7 @@ bun promptpile-tool-test/scripts/generate-tool-results.ts
 行为约束：
 
 - 仅处理 **缺失整份 `result.jsonl`** 的 idx；result 已存在则整轮跳过。
-- 解析 `[idx]assistant.call.jsonl` 的三种合法形态（含 `tool_calls` 的对象 / 根级数组 / JSONL 每行一个），与 promptpile README 一致。
+- 解析 `[idx]assistant.calls.jsonl` 的三种合法形态（含 `tool_calls` 的对象 / 根级数组 / JSONL 每行一个），与 promptpile README 一致。
 - 按 call 文件中的原始顺序，对每个有效 tool call 调用 [scripts/execute-tool-call.ts](scripts/execute-tool-call.ts) 中导出的 `executeToolCall(input)`。
 - 拼出 `[idx]assistant.result.jsonl`，每行一个 `{ tool_call_id, name, content }`。
 
@@ -66,7 +66,7 @@ bun promptpile-tool-test/scripts/generate-tool-results.ts
   - `--input`：在终端读取本轮 user 消息（结尾用 Ctrl+Z 后回车），落盘成 `messages/[N]user.md`。
   - `--continue`：根据本轮模型输出落盘（两种文件**可共存**于同一 `[N]`）：
     - 有正文：写 `messages/[N]assistant.md`。
-    - 有 `tool_calls`：写 `messages/[N]assistant.call.jsonl`。
+    - 有 `tool_calls`：写 `messages/[N]assistant.calls.jsonl`。
     - 同时有正文和 `tool_calls`：两个文件都写，下一轮拼请求时合并为一条 `{ role: 'assistant', content, tool_calls }`。
     - 都没有：不写。
   - `--after-hook-path`：见下。
@@ -75,12 +75,12 @@ bun promptpile-tool-test/scripts/generate-tool-results.ts
 ## Tool call → result 自动闭环（after-hook）
 
 - run-example 用 `--after-hook-path after-hook.bat` 启用 promptpile 的完成后钩子（路径相对运行 promptpile 时的 cwd，即 `promptpile-tool-test/`）。
-- 钩子由 promptpile **在 API 成功且本轮落盘完成后** 触发，cwd 被设为 `messages/`（`PROMPTPILE_SCAN_DIRECTORY`）。`PROMPTPILE_HAS_TOOL_CALLS=1` 时，本轮的 `[N]assistant.call.jsonl` 已经由 `--continue` 写好，钩子无需再复制。
+- 钩子由 promptpile **在 API 成功且本轮落盘完成后** 触发，cwd 被设为 `messages/`（`PROMPTPILE_SCAN_DIRECTORY`）。`PROMPTPILE_HAS_TOOL_CALLS=1` 时，本轮的 `[N]assistant.calls.jsonl` 已经由 `--continue` 写好，钩子无需再复制。
 - [after-hook.bat](after-hook.bat) 行为：
   1. 若 `PROMPTPILE_HAS_TOOL_CALLS` 不为 `1`，直接 `exit /b 0`。
-  2. 否则 `pushd` 到 `example/`，执行 `bun promptpile-tool-test\scripts\generate-tool-results.ts`；由 [scripts/execute-tool-call.ts](scripts/execute-tool-call.ts) 真正执行工具并写出与 `[N]assistant.call.jsonl` 同 idx 的 `[N]assistant.result.jsonl`。
+  2. 否则 `pushd` 到 `example/`，执行 `bun promptpile-tool-test\scripts\generate-tool-results.ts`；由 [scripts/execute-tool-call.ts](scripts/execute-tool-call.ts) 真正执行工具并写出与 `[N]assistant.calls.jsonl` 同 idx 的 `[N]assistant.result.jsonl`。
   3. 透传 `generate-tool-results.ts` 的退出码。
-- 想退回纯生成模式（只让 promptpile 写 `[N]assistant.call.jsonl`，由人工事后跑 `bun scripts/generate-tool-results.ts`），从 [run-example.bat](run-example.bat) 删掉 `--after-hook-path "after-hook.bat"` 即可。
+- 想退回纯生成模式（只让 promptpile 写 `[N]assistant.calls.jsonl`，由人工事后跑 `bun scripts/generate-tool-results.ts`），从 [run-example.bat](run-example.bat) 删掉 `--after-hook-path "after-hook.bat"` 即可。
 - `[0]system.md` 要求使用 **`SearxngSearch`**（与 `messages/.tools.toml`、[scripts/execute-tool-call.ts](scripts/execute-tool-call.ts) 一致）。若模型仍返回未注册的工具名，`generate-tool-results.ts` 会以非 0 退出（after-hook 随之失败）；请对照 stderr 里的 `[promptpile] Model tool_calls:` 与已加载工具列表排查。
 
 ## 预期产物（全部落在 `messages/`）
@@ -88,7 +88,7 @@ bun promptpile-tool-test/scripts/generate-tool-results.ts
 同一 `[N]` 下可能出现以下任意子集，下一轮拼请求时会合并为单条 `assistant`（必要时再加若干 `tool` 消息）：
 
 - `messages/[N]assistant.md` —— 模型本轮的正文（包括 tool_calls 之前可能输出的「我来查询…」之类前缀）。
-- `messages/[N]assistant.call.jsonl` —— 由 `promptpile --continue` 写入；每行一个 `tool_call`，例如：
+- `messages/[N]assistant.calls.jsonl` —— 由 `promptpile --continue` 写入；每行一个 `tool_call`，例如：
 
   ```json
   {"id":"call_xxx","type":"function","function":{"name":"SearxngSearch","arguments":"{\"query\":\"北京 今天 天气\"}"}}
