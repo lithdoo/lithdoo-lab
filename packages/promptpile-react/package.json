@@ -1,7 +1,7 @@
 {
   "name": "promptpile-react",
   "version": "1.0.0",
-  "description": "在 promptpile CLI 之上的 agent 编排（子进程调用，非 npm 依赖）",
+  "description": "在 promptpile CLI 之上的 agent 编排（子进程调用 CLI；`-i` 写入 user 消息时依赖 workspace `promptpile` 包内的 file-handler）",
   "main": "dist/index.js",
   "bin": {
     "promptpile-react": "dist/index.js"
@@ -29,6 +29,7 @@
   "dependencies": {
     "@types/node": "^25.5.2",
     "commander": "^14.0.3",
+    "promptpile": "file:../promptpile",
     "typescript": "^5.0.0"
   },
   "devDependencies": {

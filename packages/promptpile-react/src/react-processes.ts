@@ -5,12 +5,16 @@ import path from 'path';
 import { stripObserveRelevantFlags } from './argv-strip';
 import { OBSERVE_DECISION_TOOL_NAME, writeObserveToolsJsonl } from './observe-decision-tool';
 import { callsPathForMainOutput, parseObserveDecisionFromCallsFileStrict } from './parse-observe-calls';
-import { invokePromptpileSync, type PromptpileInvokeResult } from './promptpile-invoker';
+import {
+  invokePromptpileSync,
+  type PromptpileInvokeResult,
+  type PromptpileSpawnConfig
+} from './promptpile-invoker';
 import { PromptpileReactInvocationError } from './react-errors';
 
 /** 子进程阶段共享依赖（不持有 {@link PromptpileReactRuntime} 引用）。 */
 export type ReactProcessContext = {
-  command: string;
+  spawn: PromptpileSpawnConfig;
   cwd: string;
   quiet: boolean;
   continueMode: boolean;
@@ -27,7 +31,7 @@ export abstract class ReactProcess {
   }
 
   protected assertPromptpileSuccess(argv: string[], phase: 'thought' | 'observe'): void {
-    const r = invokePromptpileSync(this.ctx.command, argv, this.ctx.cwd);
+    const r = invokePromptpileSync(this.ctx.spawn, argv, this.ctx.cwd);
 
     if (r.error) {
       this.logSpawnError(r);
@@ -51,7 +55,7 @@ export abstract class ReactProcess {
 
   /** 不抛异常、不写 `stopReason`；供收尾阶段使用。 */
   protected completePromptpileInvokeSoft(argv: string[]): boolean {
-    const r = invokePromptpileSync(this.ctx.command, argv, this.ctx.cwd);
+    const r = invokePromptpileSync(this.ctx.spawn, argv, this.ctx.cwd);
 
     if (r.error) {
       this.logSpawnError(r);
@@ -94,7 +98,7 @@ export abstract class ReactProcess {
     if (r.error.code === 'ENOENT') {
       if (!this.ctx.quiet) {
         console.error(
-          `Error: 找不到命令 "${this.ctx.command}"。请安装 promptpile 并加入 PATH，或设置环境变量 PROMPTPILE_BIN 指向可执行文件。`
+          `Error: 找不到命令或脚本 "${this.ctx.spawn.displayName}"。请确认依赖包 promptpile 已 npm install 且已构建 dist，或将 promptpile 加入 PATH；也可设置 PROMPTPILE_BIN 覆盖。`
         );
       }
     } else if (!this.ctx.quiet) {

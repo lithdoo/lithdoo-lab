@@ -7,11 +7,12 @@ import {
   type ReactProcessContext
 } from './react-processes';
 import type { IReactRuntime, ReactRuntimeStopReason } from './runtime';
+import { getPromptpileSpawnConfig, type PromptpileSpawnConfig } from './promptpile-invoker';
 
 /**
  * - `currentStep`：已成功完成的 ReAct 轮次数（每轮 `nextStep` = thought + observe 均成功后 +1），从 0 开始。
  * - `maxStep`：最多允许的上述成功轮数；`Infinity` 表示 CLI 未设上限（入口侧通常只跑一轮，见 `index.ts`）。
- * - `inputMode`：尚未接线至子进程（见 CLI 说明）。
+ * - `inputMode`：仅影响 **`index.ts`** 外层是否在终端读入并写 user 文件；读盘写文件用 **`promptpile`** 包内 `file-handler`，**不**注入子进程 argv。
  * - `continueMode`：`reactThoughtProcess` / `reactObserveProcess` / `reactFinalAnswerProcess` 内拼 argv 时可附加 `-c`；主流程 `buildForwardedPromptpileArgs` 的 argv **不含** `-c`。
  *
  * 各 ReAct 子进程阶段实现见 **`react-processes.ts`**（`CoreReactProcess` / `ObserveReactProcess` / `FinalReactProcess`）。
@@ -24,20 +25,15 @@ export class PromptpileReactRuntime implements IReactRuntime {
   private readonly options: PromptpileReactOptions;
   private readonly forwardedArgs: string[];
   private readonly prompts: ReactPromptTexts;
-  private readonly command: string;
+  private readonly spawn: PromptpileSpawnConfig;
   private readonly quiet: boolean;
 
-  constructor(
-    options: PromptpileReactOptions,
-    forwardedArgs: string[],
-    prompts: ReactPromptTexts,
-    command: string = process.env.PROMPTPILE_BIN ?? 'promptpile'
-  ) {
+  constructor(options: PromptpileReactOptions, forwardedArgs: string[], prompts: ReactPromptTexts) {
     this.options = options;
     this.maxStep = options.maxStep ?? Number.POSITIVE_INFINITY;
     this.forwardedArgs = forwardedArgs;
     this.prompts = prompts;
-    this.command = command;
+    this.spawn = getPromptpileSpawnConfig();
     this.quiet = Boolean(options.quiet);
   }
 
@@ -108,7 +104,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
 
   private reactProcessCtx(): ReactProcessContext {
     return {
-      command: this.command,
+      spawn: this.spawn,
       cwd: process.cwd(),
       quiet: this.quiet,
       continueMode: this.options.continueMode,

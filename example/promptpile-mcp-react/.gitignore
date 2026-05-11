@@ -1,0 +1,5 @@
+# Session dir: tools export, message files, assistant outputs
+messages/
+
+# Local secrets (copy from .env.example)
+.env

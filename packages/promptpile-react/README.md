@@ -1,13 +1,14 @@
 # promptpile-react
 
-在 **`promptpile` 命令行**之上编排 AI agent（React 式的状态 / 回合模型）。本包**不把** `promptpile` 作为 npm 库依赖，而是通过子进程调用已安装的 **`promptpile` 可执行文件**。
+在 **`promptpile` 命令行**之上编排 AI agent（React 式的状态 / 回合模型）。**调用模型时**通过子进程执行 **`promptpile` CLI**（不把 CLI 当 npm 库 `import`）；**默认**使用依赖包 **`promptpile`** 内已构建的 **`dist/index.js`**（以当前 Node **`process.execPath`** 启动），无需全局安装。**`-i` 写入终端用户消息**时，本包依赖 workspace 内的 **`promptpile` npm 包**，引用其 **`file-handler`**（与 `promptpile -i` 写 `[idx]user.md` 的规则一致）。
 
-**当前版本**：解析 CLI、用 `PromptpileReactRuntime` 同步循环调用 `promptpile`（`child_process.spawnSync`），从 `-d` 目录读取 `.react.*.md` 提示词；**`-i` 尚未接线**。主循环 **`nextStep()`** 每轮依次 **`reactThoughtProcess()`** → **`reactObserveProcess()`**（不再单独用主 argv 跑一轮「裸」`promptpile`）。二者子进程 argv **不含** 主流程的 `-o`；`-c` 仅当 CLI 打开 `continueMode` 时由上述方法各自追加（见下文）。
+**当前版本**：解析 CLI、用 `PromptpileReactRuntime` 同步循环调用 `promptpile`（`child_process.spawnSync`），从 `-d` 目录读取 `.react.*.md` 提示词。主循环 **`nextStep()`** 每轮依次 **`reactThoughtProcess()`** → **`reactObserveProcess()`**（不再单独用主 argv 跑一轮「裸」`promptpile`）。二者子进程 argv **不含** 主流程的 `-o`；**`-c`（continueMode）** 有两层含义：见下文「`-i` / `-c`」与 **`react*` 子进程 argv**。
 
 ### 运行时与 `PROMPTPILE_BIN`
 
-- 默认可执行文件名为 **`promptpile`**（需在 `PATH` 中，或全局 `npm link` 后可用）。
-- 可通过环境变量 **`PROMPTPILE_BIN`** 指定绝对路径或自定义命令名。
+- **默认**（未设置 **`PROMPTPILE_BIN`**）：解析依赖 **`promptpile`** 的 **`dist/index.js`**，用 **`process.execPath`** 执行；需已在 **`packages/promptpile`** 执行 **`npm install` / `npm run build`** 使 **`dist/`** 存在。
+- **回退**：若无法解析到内置脚本（例如单独安装本包且未带 `promptpile` 依赖），则仍尝试命令名 **`promptpile`**（需在 `PATH` 中）。
+- **覆盖**：设置环境变量 **`PROMPTPILE_BIN`** 为可执行文件路径或命令名时，**完全**使用该值启动子进程（与旧行为、CI 或自定义包装脚本兼容）。
 - **`currentStep`**：已成功完成的 **ReAct 轮数**（每轮 `nextStep` 在 thought 与 observe **均成功**后 +1；从 0 递增）。
 - **`--max-step N`**：最多 **N** 轮上述成功；用尽后 `stopReason` 为 `max_step`。
 - **未传 `--max-step`**：内部为无上限（`Infinity`），为避免死循环，**入口只执行一轮** `nextStep` 后结束（仍可通过多次手动运行进程实现多轮）。
@@ -70,10 +71,21 @@
 
 **`reactFinalAnswerProcess()`**：`prompts.final` 非空时发起一次带 final 注入的 `promptpile`（失败时**不抛**、沿用 soft invoke 的静默返回语义）。**`finalAnswer()`** 当前委托此方法。实现类为 **`FinalReactProcess`**（[`react-processes.ts`](src/react-processes.ts)）。
 
+## `-i` / `-c`（终端输入）
+
+| 标志 | 行为 |
+|------|------|
+| **`-i`** | **必须先**带 **`-d`**。在本进程按 `promptpile` 同款提示从终端读入多行（Ctrl+Z / Ctrl+D 结束），调用 **`promptpile`** 的 **`scanDirectory` + `appendUserMessage`** 写入下一条 **user** 消息文件。**不会**向子进程传入 `-i`。 |
+| **仅 `-i`** | 读入 **一次** → 跑完整 ReAct（`nextStep` 循环 + `finalAnswer()`）→ 退出。 |
+| **`-i` + `-c`** | **外层循环**：每轮读入 → append → 新建 **`PromptpileReactRuntime`** → ReAct + `finalAnswer()` → 再次读入…直至某轮 **空输入**（报错退出，与 `promptpile -i` 一致）或 **`Ctrl+C`**。内层各 **`react*`** 子进程仍会按需追加 `-c`（续写消息目录）。 |
+
+首次安装前请在 **`packages/promptpile`** 执行 **`npm run build`**，以便 **`promptpile/dist/file-handler`** 存在。
+
 ## 安装与构建
 
 ```bash
-cd packages/promptpile-react
+cd ../promptpile && npm install && npm run build
+cd ../promptpile-react
 npm install
 npm run build
 ```
@@ -104,8 +116,8 @@ npm run build
 
 | 选项 | 说明 |
 |------|------|
-| `-i, --input` | 在终端读入并写成下一条 `user` 消息等 — **由本包实现**，不会作为 `promptpile -i` 转发 |
-| `-c, --continue` | 标志位：为真时在 **`reactThoughtProcess()`** / **`reactObserveProcess()`** / **`reactFinalAnswerProcess()`** 的子进程 argv 拷贝末尾追加 `-c`；**不**进入 `buildForwardedPromptpileArgs()` |
+| `-i, --input` | 在终端读入并写成下一条 `user` 消息（见上文「`-i` / `-c`」）；**由本包调用 `promptpile` 的 file-handler**，不会作为 `promptpile -i` 传给子进程 |
+| `-c, --continue` | **与子进程**：为真时在 **`reactThoughtProcess()`** / **`reactObserveProcess()`** / **`reactFinalAnswerProcess()`** 的子进程 argv 末尾追加 `-c`。**与 `-i` 同时**：另启用外层「读完一轮 ReAct 后再读终端」的循环（见上文表）。主 argv **`buildForwardedPromptpileArgs()`** 仍 **不含** `-c`。 |
 | `--max-step <n>` | 主循环最多 **n** 轮成功的 **`nextStep`**（每轮 thought + observe 均成功计 1）；仅本包使用，**不**传给 `promptpile`。未传时入口**只跑一轮** `nextStep`（见上文「运行时」） |
 
 ### 本包暂不提供的 `promptpile` 选项

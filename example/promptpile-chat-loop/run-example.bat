@@ -7,13 +7,25 @@ if not exist ".env" (
   echo Synced .env from .env.example
 )
 
-if "%DEEPSEEK_API_KEY%"=="" (
-  echo [ERROR] DEEPSEEK_API_KEY is not set.
-  echo Please set user env var first: setx DEEPSEEK_API_KEY "sk-xxxx"
-  exit /b 1
+REM cmd.exe does not auto-load .env; read KEY=value lines into environment (same folder as this bat).
+if exist ".env" (
+  for /f "usebackq eol=# tokens=1,* delims==" %%a in (".env") do (
+    if not "%%a"=="" (
+      if /i "%%a"=="DEEPSEEK_API_KEY" if not "%%b"=="" set "DEEPSEEK_API_KEY=%%b"
+      if /i "%%a"=="AI_API_KEY" if not "%%b"=="" set "AI_API_KEY=%%b"
+    )
+  )
 )
 
-set "AI_API_KEY=%DEEPSEEK_API_KEY%"
+if not defined AI_API_KEY if defined DEEPSEEK_API_KEY set "AI_API_KEY=!DEEPSEEK_API_KEY!"
+if not defined DEEPSEEK_API_KEY if defined AI_API_KEY set "DEEPSEEK_API_KEY=!AI_API_KEY!"
+
+if not defined AI_API_KEY (
+  echo [ERROR] No API key found.
+  echo Add DEEPSEEK_API_KEY or AI_API_KEY to ".env" in this folder, OR set User env DEEPSEEK_API_KEY.
+  echo If you used setx, open a NEW cmd window ^(setx does not update the current session^).
+  exit /b 1
+)
 
 if not exist "messages" mkdir "messages"
 if not exist "messages\[0]system.md" (
