@@ -32,10 +32,29 @@ program
     '--tool-choice <value>',
     'OpenAI tool_choice when tools are sent: none | auto | required | function:<name> (default: auto if unset)'
   )
+  .option(
+    '--disable-tool',
+    'Do not load or send tools: ignore --tools-file and TOOLS_FILE, skip default .tools.* under -d, and omit built-in Glob/Grep pack'
+  )
   .parse(process.argv);
 
 export const getCliOptions = (): Partial<Config> => {
-  const options = program.opts();
+  const options = program.opts() as {
+    directory?: string;
+    model?: string;
+    apiKey?: string;
+    apiBaseUrl?: string;
+    output?: string;
+    quiet?: boolean;
+    format?: 'text' | 'json';
+    continue?: boolean;
+    input?: boolean;
+    toolsFile?: string;
+    afterHookPath?: string;
+    toolChoice?: string;
+    systemInjectFile?: string;
+    disableTool?: boolean;
+  };
   const rawToolsFile = options.toolsFile as string | undefined;
   const toolsFileCli =
     typeof rawToolsFile === 'string' && rawToolsFile.trim() !== ''
@@ -68,6 +87,7 @@ export const getCliOptions = (): Partial<Config> => {
     toolsFileCli,
     systemInjectFileCli,
     afterHookCli,
-    toolChoice: toolChoiceCli
+    toolChoice: toolChoiceCli,
+    disableTool: Boolean(options.disableTool)
   };
 };

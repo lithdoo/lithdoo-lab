@@ -115,19 +115,26 @@ async function main(): Promise<void> {
     }
 
     let tools;
-    try {
-      tools = loadTools({
-        directory: config.directory,
-        cwd,
-        toolsFileCli: config.toolsFileCli,
-        toolsFileEnv: config.toolsFileEnv
-      });
-    } catch (e) {
-      console.error('Error loading tools:', e instanceof Error ? e.message : e);
-      process.exit(1);
-    }
+    if (config.disableTool) {
+      tools = undefined;
+      if (isPromptpileDiagnostic()) {
+        console.error('[promptpile] tools: disabled (--disable-tool)');
+      }
+    } else {
+      try {
+        tools = loadTools({
+          directory: config.directory,
+          cwd,
+          toolsFileCli: config.toolsFileCli,
+          toolsFileEnv: config.toolsFileEnv
+        });
+      } catch (e) {
+        console.error('Error loading tools:', e instanceof Error ? e.message : e);
+        process.exit(1);
+      }
 
-    tools = mergeSearchToolsPack(tools);
+      tools = mergeSearchToolsPack(tools);
+    }
 
     let toolChoiceForApi: ChatApiToolChoice | undefined;
     try {

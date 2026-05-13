@@ -1,12 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 
-const MAX_BUFFER = 16 * 1024 * 1024;
+const STDERR_CAP = 32 * 1024;
 
 export type PromptpileInvokeResult = {
   status: number | null;
   error?: NodeJS.ErrnoException;
+  /** Non-streaming capture only; streaming path leaves empty (already written to TTY). */
   stdout: string;
   stderr: string;
 };
@@ -52,37 +53,75 @@ export function getPromptpileSpawnConfig(): PromptpileSpawnConfig {
   return { command: 'promptpile', argvPrefix: [], displayName: 'promptpile' };
 }
 
-/**
- * 同步调用 promptpile CLI（与 `IReactRuntime` 的同步 `nextStep` 对齐）。
- */
-export function invokePromptpileSync(
-  spawn: PromptpileSpawnConfig,
-  cliArgs: string[],
-  cwd?: string
-): PromptpileInvokeResult {
-  const argv = [...spawn.argvPrefix, ...cliArgs];
-  const r = spawnSync(spawn.command, argv, {
-    cwd: cwd ?? process.cwd(),
-    encoding: 'utf8',
-    maxBuffer: MAX_BUFFER,
-    windowsHide: true
-  });
-
-  const out = typeof r.stdout === 'string' ? r.stdout : '';
-  const err = typeof r.stderr === 'string' ? r.stderr : '';
-
-  if (r.error) {
-    return {
-      status: null,
-      error: r.error as NodeJS.ErrnoException,
-      stdout: out,
-      stderr: err
-    };
+function appendStderrCapped(store: { value: string }, s: string): void {
+  store.value += s;
+  if (store.value.length > STDERR_CAP) {
+    store.value = store.value.slice(-STDERR_CAP);
   }
+}
 
-  return {
-    status: typeof r.status === 'number' ? r.status : null,
-    stdout: out,
-    stderr: err
-  };
+/**
+ * 异步调用 promptpile CLI：子进程存活期间将 stdout/stderr 实时转发到当前进程（除非 `quiet`）。
+ * 结束后 `stdout` 为空（已流式写出）；`stderr` 为截断后的累积（供错误 tail）。
+ */
+export function invokePromptpileAsync(
+  spawnConfig: PromptpileSpawnConfig,
+  cliArgs: string[],
+  options: { cwd?: string; quiet: boolean }
+): Promise<PromptpileInvokeResult> {
+  const cwd = options.cwd ?? process.cwd();
+  const argv = [...spawnConfig.argvPrefix, ...cliArgs];
+  const stderrStore = { value: '' };
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (r: PromptpileInvokeResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(r);
+    };
+
+    const child = spawn(spawnConfig.command, argv, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+
+    child.stdout?.on('data', (chunk: string | Buffer) => {
+      const s = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      if (!options.quiet) {
+        process.stdout.write(s);
+      }
+    });
+
+    child.stderr?.on('data', (chunk: string | Buffer) => {
+      const s = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      appendStderrCapped(stderrStore, s);
+      if (!options.quiet) {
+        process.stderr.write(s);
+      }
+    });
+
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      finish({
+        status: null,
+        error: err,
+        stdout: '',
+        stderr: stderrStore.value
+      });
+    });
+
+    child.on('close', (code: number | null) => {
+      finish({
+        status: typeof code === 'number' ? code : null,
+        stdout: '',
+        stderr: stderrStore.value
+      });
+    });
+  });
 }

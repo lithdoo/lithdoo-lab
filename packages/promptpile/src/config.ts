@@ -38,6 +38,7 @@ export const loadConfig = (options: Partial<Config>): Config => {
     systemInjectFileCli: options.systemInjectFileCli,
     afterHookCli: options.afterHookCli,
     afterHookEnv,
-    toolChoice: options.toolChoice ?? toolChoiceEnv
+    toolChoice: options.toolChoice ?? toolChoiceEnv,
+    disableTool: options.disableTool ?? false
   };
 };

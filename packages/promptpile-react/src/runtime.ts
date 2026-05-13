@@ -11,6 +11,6 @@ export interface IReactRuntime {
   /** 已成功完成的 `promptpile` 调用次数，从 0 起；与 `maxStep` 比较用 */
   currentStep: number;
   stopReason: ReactRuntimeStopReason;
-  nextStep: () => void;
-  finalAnswer: () => void;
+  nextStep: () => Promise<void>;
+  finalAnswer: () => Promise<void>;
 }

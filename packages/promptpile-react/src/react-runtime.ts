@@ -42,7 +42,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
    * 二者任一侧子进程或 observe 读盘解析失败 → **`PromptpileReactInvocationError`**（本方法 **catch** 后 `stopReason = 'error'`）；
    * observe 正常返回 `false` → `stopReason = 'final'`。
    */
-  nextStep(): void {
+  async nextStep(): Promise<void> {
     if (this.stopReason !== 'running') {
       return;
     }
@@ -52,8 +52,8 @@ export class PromptpileReactRuntime implements IReactRuntime {
     }
 
     try {
-      this.reactThoughtProcess();
-      const continueOuter = this.reactObserveProcess();
+      await this.reactThoughtProcess();
+      const continueOuter = await this.reactObserveProcess();
       this.currentStep += 1;
       if (!continueOuter) {
         this.stopReason = 'final';
@@ -67,8 +67,8 @@ export class PromptpileReactRuntime implements IReactRuntime {
     }
   }
 
-  finalAnswer(): void {
-    this.reactFinalAnswerProcess();
+  async finalAnswer(): Promise<void> {
+    await this.reactFinalAnswerProcess();
   }
 
   /**
@@ -77,8 +77,8 @@ export class PromptpileReactRuntime implements IReactRuntime {
    *
    * **不修改** `currentStep` / `stopReason`（由 `nextStep` 的 try/catch 或外层调用方处理异常）。
    */
-  reactThoughtProcess(): void {
-    new CoreReactProcess(this.reactProcessCtx(), this.prompts.core).run();
+  async reactThoughtProcess(): Promise<void> {
+    await new CoreReactProcess(this.reactProcessCtx(), this.prompts.core).run();
   }
 
   /**
@@ -89,7 +89,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
    * 子进程失败或 calls 读盘/解析非法 → **`throw PromptpileReactInvocationError`**。
    * 仅删除本轮 `.calls.jsonl` 与临时 tools/inject；**保留** `-o` 主输出。不修改 `currentStep` / `stopReason`。
    */
-  reactObserveProcess(): boolean {
+  async reactObserveProcess(): Promise<boolean> {
     return new ObserveReactProcess(this.reactProcessCtx(), this.prompts.observe).run();
   }
 
@@ -98,8 +98,8 @@ export class PromptpileReactRuntime implements IReactRuntime {
    * 若 `continueMode` 则在 argv 拷贝上追加 `-c`。`prompts.final` 仅空白时 **no-op**（不调子进程）。
    * 不修改 `currentStep` / `stopReason`。
    */
-  reactFinalAnswerProcess(): void {
-    new FinalReactProcess(this.reactProcessCtx(), this.prompts.final).run();
+  async reactFinalAnswerProcess(): Promise<void> {
+    await new FinalReactProcess(this.reactProcessCtx(), this.prompts.final).run();
   }
 
   private reactProcessCtx(): ReactProcessContext {

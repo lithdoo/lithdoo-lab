@@ -81,6 +81,8 @@ export interface Config {
    * Parsed to {@link ChatApiToolChoice} when building the API body.
    */
   toolChoice?: string;
+  /** CLI `--disable-tool`: skip loading tools from any source and omit built-in Glob/Grep pack. */
+  disableTool?: boolean;
 }
 
 export interface AiCallResult {

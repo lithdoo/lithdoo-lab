@@ -2,14 +2,15 @@ import { randomBytes } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { stripObserveRelevantFlags } from './argv-strip';
+import { stripFinalForwardedArgs, stripObserveRelevantFlags } from './argv-strip';
 import { OBSERVE_DECISION_TOOL_NAME, writeObserveToolsJsonl } from './observe-decision-tool';
 import { callsPathForMainOutput, parseObserveDecisionFromCallsFileStrict } from './parse-observe-calls';
 import {
-  invokePromptpileSync,
+  invokePromptpileAsync,
   type PromptpileInvokeResult,
   type PromptpileSpawnConfig
 } from './promptpile-invoker';
+import { reactDebugLog } from './react-debug-log';
 import { PromptpileReactInvocationError } from './react-errors';
 
 /** 子进程阶段共享依赖（不持有 {@link PromptpileReactRuntime} 引用）。 */
@@ -30,8 +31,14 @@ export abstract class ReactProcess {
     }
   }
 
-  protected assertPromptpileSuccess(argv: string[], phase: 'thought' | 'observe'): void {
-    const r = invokePromptpileSync(this.ctx.spawn, argv, this.ctx.cwd);
+  protected async assertPromptpileSuccess(
+    argv: string[],
+    phase: 'thought' | 'observe'
+  ): Promise<void> {
+    const r = await invokePromptpileAsync(this.ctx.spawn, argv, {
+      cwd: this.ctx.cwd,
+      quiet: this.ctx.quiet
+    });
 
     if (r.error) {
       this.logSpawnError(r);
@@ -40,8 +47,6 @@ export abstract class ReactProcess {
         r.error.message || '无法启动 promptpile'
       );
     }
-
-    this.emitSubprocessStreams(r);
 
     if (r.status !== 0) {
       const tail = r.stderr.trim().slice(-500);
@@ -54,15 +59,16 @@ export abstract class ReactProcess {
   }
 
   /** 不抛异常、不写 `stopReason`；供收尾阶段使用。 */
-  protected completePromptpileInvokeSoft(argv: string[]): boolean {
-    const r = invokePromptpileSync(this.ctx.spawn, argv, this.ctx.cwd);
+  protected async completePromptpileInvokeSoft(argv: string[]): Promise<boolean> {
+    const r = await invokePromptpileAsync(this.ctx.spawn, argv, {
+      cwd: this.ctx.cwd,
+      quiet: this.ctx.quiet
+    });
 
     if (r.error) {
       this.logSpawnError(r);
       return false;
     }
-
-    this.emitSubprocessStreams(r);
 
     if (r.status !== 0) {
       return false;
@@ -79,15 +85,6 @@ export abstract class ReactProcess {
       fs.unlinkSync(p);
     } catch {
       // ignore
-    }
-  }
-
-  private emitSubprocessStreams(r: PromptpileInvokeResult): void {
-    if (r.stdout && !this.ctx.quiet) {
-      process.stdout.write(r.stdout);
-    }
-    if (r.stderr && !this.ctx.quiet) {
-      process.stderr.write(r.stderr);
     }
   }
 
@@ -113,7 +110,7 @@ export class CoreReactProcess extends ReactProcess {
     super(ctx);
   }
 
-  run(): void {
+  async run(): Promise<void> {
     const argv = [...this.ctx.forwardedArgs];
     this.appendContinueIfNeeded(argv);
 
@@ -128,7 +125,8 @@ export class CoreReactProcess extends ReactProcess {
         fs.writeFileSync(tempPath, this.coreBody, 'utf8');
         argv.push('--system-inject-file', path.resolve(tempPath));
       }
-      this.assertPromptpileSuccess(argv, 'thought');
+      reactDebugLog('phase=thought');
+      await this.assertPromptpileSuccess(argv, 'thought');
     } finally {
       this.unlinkQuiet(tempPath);
     }
@@ -141,7 +139,7 @@ export class ObserveReactProcess extends ReactProcess {
     super(ctx);
   }
 
-  run(): boolean {
+  async run(): Promise<boolean> {
     const baseId = `${Date.now()}-${randomBytes(8).toString('hex')}`;
     let toolsPath: string | undefined;
     let injectPath: string | undefined;
@@ -162,7 +160,7 @@ export class ObserveReactProcess extends ReactProcess {
       }
       this.appendContinueIfNeeded(argv);
 
-      this.assertPromptpileSuccess(argv, 'observe');
+      await this.assertPromptpileSuccess(argv, 'observe');
 
       const callsPath = callsPathForMainOutput(resolvedOut);
       let cont: boolean;
@@ -179,6 +177,7 @@ export class ObserveReactProcess extends ReactProcess {
       } catch {
         // ignore
       }
+      reactDebugLog(`phase=observe continue=${cont}`);
       return cont;
     } finally {
       this.unlinkQuiet(toolsPath);
@@ -193,12 +192,14 @@ export class FinalReactProcess extends ReactProcess {
     super(ctx);
   }
 
-  run(): void {
+  async run(): Promise<void> {
     if (this.finalBody.trim() === '') {
+      reactDebugLog('phase=final skip');
       return;
     }
 
-    const argv = [...this.ctx.forwardedArgs];
+    reactDebugLog('phase=final');
+    const argv = stripFinalForwardedArgs([...this.ctx.forwardedArgs]);
     this.appendContinueIfNeeded(argv);
 
     let tempPath: string | undefined;
@@ -209,7 +210,8 @@ export class FinalReactProcess extends ReactProcess {
       );
       fs.writeFileSync(tempPath, this.finalBody, 'utf8');
       argv.push('--system-inject-file', path.resolve(tempPath));
-      void this.completePromptpileInvokeSoft(argv);
+      argv.push('--disable-tool');
+      await this.completePromptpileInvokeSoft(argv);
     } finally {
       this.unlinkQuiet(tempPath);
     }

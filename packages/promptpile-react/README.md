@@ -2,7 +2,7 @@
 
 在 **`promptpile` 命令行**之上编排 AI agent（React 式的状态 / 回合模型）。**调用模型时**通过子进程执行 **`promptpile` CLI**（不把 CLI 当 npm 库 `import`）；**默认**使用依赖包 **`promptpile`** 内已构建的 **`dist/index.js`**（以当前 Node **`process.execPath`** 启动），无需全局安装。**`-i` 写入终端用户消息**时，本包依赖 workspace 内的 **`promptpile` npm 包**，引用其 **`file-handler`**（与 `promptpile -i` 写 `[idx]user.md` 的规则一致）。
 
-**当前版本**：解析 CLI、用 `PromptpileReactRuntime` 同步循环调用 `promptpile`（`child_process.spawnSync`），从 `-d` 目录读取 `.react.*.md` 提示词。主循环 **`nextStep()`** 每轮依次 **`reactThoughtProcess()`** → **`reactObserveProcess()`**（不再单独用主 argv 跑一轮「裸」`promptpile`）。二者子进程 argv **不含** 主流程的 `-o`；**`-c`（continueMode）** 有两层含义：见下文「`-i` / `-c`」与 **`react*` 子进程 argv**。
+**当前版本**：解析 CLI、用 `PromptpileReactRuntime` 以 **`child_process.spawn`** 异步调用 **`promptpile`**（不再使用 `spawnSync`）。子进程 **stdout/stderr** 在运行期间 **实时转发** 到当前进程终端（`promptpile` 在 **text** 模式下流式写出的正文会逐块出现；粒度取决于管道与上游 chunk）。若传入 **`-q`**：子进程 argv 仍带 **`promptpile -q`**，且本进程 **不向终端转发** 子进程的 stdout/stderr（与少刷屏一致）。从 `-d` 目录读取 `.react.*.md` 提示词。主循环 **`nextStep()`**（`async`）每轮依次 **`await reactThoughtProcess()`** → **`await reactObserveProcess()`**（不再单独用主 argv 跑一轮「裸」`promptpile`）。二者子进程 argv **不含** 主流程的 `-o`；**`-c`（continueMode）** 有两层含义：见下文「`-i` / `-c`」与 **`react*` 子进程 argv**。
 
 ### 运行时与 `PROMPTPILE_BIN`
 
@@ -14,6 +14,13 @@
 - **未传 `--max-step`**：内部为无上限（`Infinity`），为避免死循环，**入口只执行一轮** `nextStep` 后结束（仍可通过多次手动运行进程实现多轮）。
 - **`finalAnswer()`**：委托 **`reactFinalAnswerProcess()`**（见下文）；若 `.react.final.md` 非空则发起一次带 final 注入的 `promptpile`。
 - **`stopReason`**：`error` 表示 thought/observe 子进程失败或 observe 读 **`.calls.jsonl` 解析失败**（`nextStep` **catch** `PromptpileReactInvocationError` 等异常后写入，**不向进程外再抛**）；`final` 表示 observe 正常返回 **`false`**（判定不继续）；`max_step` 表示达到步数上限。
+
+## 编排调试（`PROMPTPILE_REACT_DEBUG`）
+
+- 设置环境变量 **`PROMPTPILE_REACT_DEBUG`** 为 **`1` / `true` / `yes` / `on`**（大小写不敏感）时，本包向 **stderr** 输出少量 **`[promptpile-react]`** 前缀行，便于对照 ReAct 阶段与会话边界。
+- **与 `promptpile` 的 `PROMPTPILE_DEBUG` 无关**：后者会打开子进程内工具解析等诊断；若只需编排层日志，只设 **`PROMPTPILE_REACT_DEBUG`**；两者可同时开启。
+- **与 `-q` 的关系**：编排调试行**仍输出到 stderr**，即使传入 **`promptpile-react -q`**（与 `promptpile` 文档中 `PROMPTPILE_DEBUG` 在 `-q` 下仍输出 stderr 的思路一致）。
+- 典型行（不含子进程流式正文）：**`session start maxStep=…`** / **`phase=thought`** / **`phase=observe continue=true|false`** / **`phase=final`** 或 **`phase=final skip`** / **`inputRound userAppended`**（`-i` 落盘后）/ **`session end stopReason=…`**。
 
 ## React 提示词文件（`-d` 目录下）
 
@@ -38,9 +45,11 @@
 每轮顺序：
 
 1. 若 `stopReason !== 'running'` 或已达 **`maxStep`** → 置 `max_step` 或直接 return。
-2. **`try`**：`reactThoughtProcess()` → **`reactObserveProcess()`**。
+2. **`try`**：`await reactThoughtProcess()` → **`await reactObserveProcess()`**。
 3. 二者均**未抛异常**时：`currentStep += 1`；若 `reactObserveProcess()` 返回 **`false`** → **`stopReason = 'final'`**；若返回 **`true`** 且已达有限 **`maxStep`** → **`stopReason = 'max_step'`**。
 4. **`catch`**（含 **`PromptpileReactInvocationError`**）→ **`stopReason = 'error'`**（异常**不**冒泡到 CLI `index.ts`）。
+
+入口 **`runOneReactSession`** 在 **`nextStep` 循环结束后 `await finalAnswer()`**。
 
 ## ReAct 思考阶段（`PromptpileReactRuntime.reactThoughtProcess`）
 
@@ -71,6 +80,14 @@
 
 **`reactFinalAnswerProcess()`**：`prompts.final` 非空时发起一次带 final 注入的 `promptpile`（失败时**不抛**、沿用 soft invoke 的静默返回语义）。**`finalAnswer()`** 当前委托此方法。实现类为 **`FinalReactProcess`**（[`react-processes.ts`](src/react-processes.ts)）。
 
+| 行为 | 说明 |
+|------|------|
+| **argv** | 从 `forwardedArgs` **拷贝**后 **仅**移除 **`--after-hook-path`**、`-o` / `--output` 及其参数；**不**移除 **`--tools-file`**——是否禁用工具**仅**由 **`promptpile`** 的 **`--disable-tool`** 控制（见 [promptpile 文档](../promptpile/README.md)）。去掉孤立的 **`--disable-tool`** 后再追加 **`--system-inject-file`**（final 提示词临时文件），**argv 末尾**再追加 **`--disable-tool`**（仅此一处关闭工具）。 |
+| **after-hook** | 本轮 argv **不带** `--after-hook-path`（与转发中显式传入的 hook 解绑），避免 Final 成功后再跑 after-hook。 |
+| **`-c`** | `continueMode` 为真时在本轮 argv 中 **`--system-inject-file` 之前**追加 `-c`（与 Thought/Observe 一致）。 |
+
+`promptpile` 在 **`--disable-tool`** 下会忽略 **`TOOLS_FILE`** 与扫描目录默认 **`.tools.*`**，无需本包 unset 子进程环境。
+
 ## `-i` / `-c`（终端输入）
 
 | 标志 | 行为 |
@@ -98,7 +115,7 @@ npm run build
 
 ### 会转发给 `promptpile` 的参数
 
-以下选项由 `buildForwardedPromptpileArgs()` 拼成 **转发 argv**，供 **`reactThoughtProcess` / `reactObserveProcess` / `reactFinalAnswerProcess`** 在各自拷贝上追加注入项使用；**不含** `-i`、`-c`、`-o`（`-c` / 临时 `-o` 仅出现在上述方法的子进程 argv 中，见上文）。**`nextStep` 不再**以此 argv 直接额外调用一轮「裸」`promptpile`。
+以下选项由 `buildForwardedPromptpileArgs()` 拼成 **转发 argv**，供 **`reactThoughtProcess` / `reactObserveProcess` / `reactFinalAnswerProcess`** 在各自拷贝上追加注入项使用；**不含** `-i`、`-c`、`-o`（`-c` / 临时 `-o` 仅出现在上述方法的子进程 argv 中，见上文）。**Final** 子进程会在拷贝上 **剥离** **`--after-hook-path`**（见「ReAct 收尾」）；**`--tools-file`** 仍随转发传入，**工具是否下发**由 **`--disable-tool`** 单独控制。**`nextStep` 不再**以此 argv 直接额外调用一轮「裸」`promptpile`。
 
 | 选项 | 说明 |
 |------|------|
@@ -106,7 +123,7 @@ npm run build
 | `-m, --model <model>` | 模型 ID |
 | `-k, --api-key <key>` | API Key |
 | `-b, --api-base-url <url>` | API Base URL |
-| `-q, --quiet` | 静默（与 `promptpile` 一致） |
+| `-q, --quiet` | 静默：转发给 **`promptpile -q`**；本进程 **不**将子进程 stdout/stderr 实时打到终端（子进程内部仍遵守 `promptpile` 静默规则） |
 | `--tools-file <path>` | 仅从该路径加载 tools（`.jsonl` 或 `.toml`）；相对路径相对当前工作目录 |
 | `--after-hook-path <path>` | 成功后执行的脚本；相对路径相对当前工作目录 |
 
@@ -122,7 +139,11 @@ npm run build
 
 ### 本包暂不提供的 `promptpile` 选项
 
-例如 `-f` / `--format`、`--tool-choice` 等：**不在本 CLI 中声明**，也不参与主 argv 转发；**`-o`** 由 **`reactObserveProcess()`** 内部临时使用，主 CLI 不转发。
+例如 `-f` / `--format` 等：**不在本 CLI 中声明**，也不参与主 argv 转发；**`-o`** 由 **`reactObserveProcess()`** 内部临时使用，主 CLI 不转发。
+
+**`--tool-choice`**：主 CLI **不声明、不转发**。
+
+**`--disable-tool`**：主 CLI **不声明、不转发**；**仅**在 **`reactFinalAnswerProcess()`** 的子进程 argv **末尾固定追加**（并先去掉拷贝中孤立的重复 **`--disable-tool`**），见 [promptpile 文档](../promptpile/README.md)。
 
 ## 开发
 

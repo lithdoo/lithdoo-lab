@@ -168,6 +168,8 @@ npm start -- --help
 
 **优先级**：**`--tools-file`** > **`TOOLS_FILE`** > **默认根目录探测**。显式配置时 **不再** 在扫描根下自动查找 `.tools.toml` / `.tools.jsonl`。
 
+**`--disable-tool`**：若在命令行传入该开关，则 **不** 从上述任一来源加载工具，**不** 合并内置 Glob/Grep（`mergeSearchToolsPack`）；请求体中 **不传** `tools`。与 **`--tools-file`** 同时出现时以 **`--disable-tool` 为准**（不解析 `--tools-file` 路径，不因路径缺失报错）。历史消息中的 `tool_calls` / `tool` 仍按文件照常拼入 `messages`。
+
 **默认模式下的互斥**：若 **未** 使用 CLI / 环境变量指定工具文件，且扫描根下 **同时** 存在 **`.tools.toml`** 与 **`.tools.jsonl`**，程序在调用 API **之前**报错退出（请只保留其一）。
 
 **显式路径**：文件 **必须存在** 且扩展名仅为 **`.toml`** 或 **`.jsonl`**，否则在调用 API **之前**报错退出（stderr 含绝对路径说明）。**无** `tools` 键的 TOML、或 `tools` / JSONL 解析结果为空数组时，与「不传 `tools`」相同。
@@ -307,6 +309,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `--system-inject-file <path>` | 从该 UTF-8 文件注入 **system** 正文：与首条 `system` 合并或于最前插入；**相对路径相对当前工作目录**；仅空白则忽略；缺失则报错退出 | 无 |
 | `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
 | `--tool-choice <value>` | OpenAI `tool_choice`：当且仅当本次请求包含非空 `tools` 时写入请求体。`none`（禁止工具调用）\|`auto`\|`required`\|`function:<name>`（强制指定工具）。**优先级**：CLI 高于 `TOOL_CHOICE`；均未设置时按 `auto` | 无（由 `TOOL_CHOICE` 或未设置时的 `auto` 决定） |
+| `--disable-tool` | 不加载、不发送 `tools`：忽略 `--tools-file` 与 `TOOLS_FILE`、不探测扫描目录下 `.tools.toml` / `.tools.jsonl`、不合并内置 Glob/Grep；与 `--tools-file` 同时出现时 **本开关优先** | 关闭 |
 
 与「不传 `tools`」的区别：`tool_choice` 仅在请求体带 `tools` 时发送；`none` 表示仍下发工具定义但禁止模型发起 `tool_calls`。自建网关若不支持 `required` 或强制 `function` 对象，可能返回 400，需以网关文档为准。
 

@@ -34,7 +34,7 @@
 
 **`run-example.bat`** 向 **`promptpile-react`** 传入 **`--after-hook-path`**，指向本目录 **`after-hook-mcp-exec-calls.bat`**。
 
-- **触发时机**：仅在 **Thought** 阶段的 **`promptpile`** 成功结束后（**Observe** 阶段会剥离 **`--after-hook-path`**，见 **`packages/promptpile-react`**）。
+- **触发时机**：仅在 **Thought** 阶段的 **`promptpile`** 成功结束后（**Observe** 与 **Final** 阶段会剥离 **`--after-hook-path`**，见 **`packages/promptpile-react`**）。
 - **行为**：若 **`PROMPTPILE_HAS_TOOL_CALLS=1`**（由 **`promptpile`** 注入），则调用 **`promptpile-mcp exec-calls`**，将 **`messages/`** 下 **`*.calls.jsonl`** 转为 **`*.result.jsonl`**。**`PROMPTPILE_MCP_BASE_URL`** 须在环境中存在（脚本默认设置；可与 `.env` 覆盖）。
 - **网关**：**`launch`** 须保持运行；否则 **`exec-calls`** 会失败。
 
