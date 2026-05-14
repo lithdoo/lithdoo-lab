@@ -8,7 +8,7 @@
 
 在保持「目录中的消息文件 → Chat Completions」工作流的前提下，支持：
 
-- 从目录读取 **工具定义**（`.tools.jsonl`）。
+- 从 **显式路径** 读取 **工具定义**（`.toml`，可含 `extends`）。
 - 模型返回 **工具调用** 时，在流式正文结束后输出/落盘调用记录。
 - 将会话目录中 **与某条 assistant 配套的 call/result** 拼进 `messages`，用于回放或人工补全工具结果。
 
@@ -18,12 +18,10 @@
 
 ## 文件与命名约定
 
-### 1. `.tools.jsonl`（会话目录根或约定路径）
+### 1. 工具 `.toml`（显式路径，可含 `extends`）
 
-- **位置**：与现有 `[idx]role.md` 扫描根目录一致（具体路径在实现时固定一种：仅根目录或递归，需与 README 一致）。
-- **内容**：JSON Lines，**每行一个** OpenAI `tools` 数组元素（即单个 `tool` 项，例如 `{"type":"function","function":{...}}`）。
-- **缺失**：若无此文件，请求中不传 `tools`，行为与当前纯对话一致。
-- **非法**：若文件存在但某行非合法 JSON / 不符合约定，**在调用 API 前报错退出**。
+- **入口**：`--tools-file` / `TOOLS_FILE` / 配置中的 `tools_file`；不再依赖会话目录默认文件名。
+- **内容**：根表 `extends` + `[[tools]]` 扁平条目；见 README。
 
 ### 2. 主输出与调用记录：`{basename}.calls.jsonl`
 
@@ -86,7 +84,7 @@
 ### 调用 API 前校验
 
 - **输出路径不合法**（无法创建目录、只读介质、非法路径等）：**报错退出**，不发起请求。
-- **`.tools.jsonl` 存在但解析/校验失败**：**报错退出**。
+- **工具 `.toml` 存在但解析/校验失败**：**报错退出**。
 - （按需补充）主输出与 `.calls.jsonl` 路径冲突检测：若会导致覆盖非预期文件，可报错或覆盖并在 README 说明。
 
 ---
@@ -95,7 +93,7 @@
 
 1. **类型**：扩展 `Message` 或与 OpenAI 对齐的请求体类型，支持 `tool_calls`、`tool` 消息的 `tool_call_id` / `content`。
 2. **`ai-client.ts`**：
-   - 请求体增加 `tools`（从 `.tools.jsonl` 读取）。
+   - 请求体增加 `tools`（从显式 `.toml` 读取，含 `extends` 展开）。
    - 非流式或流式路径均能解析 **`message.tool_calls`** / 流式 **`delta.tool_calls`** 的合并。
    - 流式结束后统一得到完整 `tool_calls` 再落盘/打印。
 3. **`file-handler.ts`（或新模块）**：

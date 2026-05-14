@@ -4,20 +4,26 @@ import { parse as parseToml } from '@iarna/toml';
 import { isPromptpileDiagnostic } from './diagnostic-log';
 import type { ToolDefinition } from './types';
 
-const TOOLS_JSONL = '.tools.jsonl';
-const TOOLS_TOML = '.tools.toml';
+/** Maximum `extends` nesting depth (root file is depth 0); entering depth > 32 throws. */
+const MAX_EXTENDS_DEPTH = 32;
 
 const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
 const isFile = (absPath: string): boolean =>
   fs.existsSync(absPath) && fs.statSync(absPath).isFile();
 
+const toolFunctionName = (t: ToolDefinition): string | undefined => {
+  const fn = (t as { function?: unknown }).function;
+  if (!fn || typeof fn !== 'object' || Array.isArray(fn)) {
+    return undefined;
+  }
+  const name = (fn as { name?: unknown }).name;
+  return typeof name === 'string' && name.length > 0 ? name : undefined;
+};
+
 /**
  * Validate one flat tool entry and wrap it into the OpenAI Chat Completions
  * `tools[]` shape: `{ type: "function", function: { name, description?, parameters? } }`.
- *
- * Flat entries must contain `name` and may contain `description` / `parameters`.
- * Top-level `type` / `function` keys are rejected (the old nested form is no longer accepted).
  */
 const normalizeFlatToolEntry = (
   rec: Record<string, unknown>,
@@ -59,37 +65,7 @@ const normalizeFlatToolEntry = (
   return { type: 'function', function: fn } as ToolDefinition;
 };
 
-const parseToolsJsonlContent = (raw: string, labelForErrors: string): ToolDefinition[] | undefined => {
-  const lines = raw.split(/\r?\n/);
-  const tools: ToolDefinition[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) {
-      continue;
-    }
-    let obj: unknown;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      throw new Error(`${labelForErrors}: line ${i + 1} is not valid JSON`);
-    }
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-      throw new Error(`${labelForErrors}: line ${i + 1} must be a JSON object`);
-    }
-    const rec = obj as Record<string, unknown>;
-    tools.push(normalizeFlatToolEntry(rec, labelForErrors, `line ${i + 1}`));
-  }
-
-  return tools.length > 0 ? tools : undefined;
-};
-
-const parseToolsJsonlFromAbsolutePath = (absPath: string): ToolDefinition[] | undefined => {
-  const raw = stripBom(fs.readFileSync(absPath, 'utf8'));
-  return parseToolsJsonlContent(raw, path.basename(absPath));
-};
-
-const parseToolsTomlContent = (raw: string, labelForErrors: string): ToolDefinition[] | undefined => {
+const parseTomlRootTable = (raw: string, labelForErrors: string): Record<string, unknown> => {
   let root: unknown;
   try {
     root = parseToml(raw);
@@ -100,18 +76,41 @@ const parseToolsTomlContent = (raw: string, labelForErrors: string): ToolDefinit
   if (!root || typeof root !== 'object' || Array.isArray(root)) {
     throw new Error(`${labelForErrors}: root must be a TOML table`);
   }
-  const table = root as Record<string, unknown>;
+  return root as Record<string, unknown>;
+};
+
+/** Later entries in `overlay` win on duplicate `function.name`. */
+const mergeToolsByName = (base: ToolDefinition[], overlay: ToolDefinition[]): ToolDefinition[] => {
+  const map = new Map<string, ToolDefinition>();
+  for (const t of base) {
+    const n = toolFunctionName(t);
+    if (n) {
+      map.set(n, t);
+    }
+  }
+  for (const t of overlay) {
+    const n = toolFunctionName(t);
+    if (n) {
+      map.set(n, t);
+    }
+  }
+  return [...map.values()];
+};
+
+const parseToolsArrayFromTable = (
+  table: Record<string, unknown>,
+  labelForErrors: string,
+): ToolDefinition[] => {
   const toolsRaw = table.tools;
   if (toolsRaw === undefined || toolsRaw === null) {
-    return undefined;
+    return [];
   }
   if (!Array.isArray(toolsRaw)) {
     throw new Error(`${labelForErrors}: "tools" must be an array`);
   }
   if (toolsRaw.length === 0) {
-    return undefined;
+    return [];
   }
-
   const tools: ToolDefinition[] = [];
   for (let i = 0; i < toolsRaw.length; i++) {
     const item = toolsRaw[i];
@@ -124,48 +123,87 @@ const parseToolsTomlContent = (raw: string, labelForErrors: string): ToolDefinit
   return tools;
 };
 
-const parseToolsTomlFromAbsolutePath = (absPath: string): ToolDefinition[] | undefined => {
-  const raw = stripBom(fs.readFileSync(absPath, 'utf8'));
-  return parseToolsTomlContent(raw, path.basename(absPath));
+const normalizeExtendsField = (table: Record<string, unknown>, labelForErrors: string): string[] => {
+  const v = table.extends;
+  if (v === undefined || v === null) {
+    return [];
+  }
+  if (typeof v === 'string') {
+    const t = v.trim();
+    return t === '' ? [] : [t];
+  }
+  if (Array.isArray(v)) {
+    const out: string[] = [];
+    for (let i = 0; i < v.length; i++) {
+      const item = v[i];
+      if (typeof item !== 'string' || item.trim() === '') {
+        throw new Error(`${labelForErrors}: extends[${i}] must be a non-empty string`);
+      }
+      out.push(item.trim());
+    }
+    return out;
+  }
+  throw new Error(`${labelForErrors}: "extends" must be a string or an array of strings`);
 };
 
 /**
- * Load `.tools.jsonl` from the message directory root only (not recursive).
- * Returns `undefined` if the file is absent. Throws if present but invalid.
+ * Load one tools TOML (with `extends` resolved) into a flat tool list.
+ * Merge order: each `extends` target fully resolved depth-first, siblings merged left-to-right
+ * (later sibling wins on duplicate names), then this file's `tools` wins over all extends.
  */
-export const loadToolsJsonl = (directory: string): ToolDefinition[] | undefined => {
-  const fullPath = path.join(directory, TOOLS_JSONL);
-  if (!isFile(fullPath)) {
-    return undefined;
+export const loadToolsTomlResolved = (
+  absPath: string,
+  stack: Set<string>,
+  depth: number,
+): ToolDefinition[] => {
+  if (depth > MAX_EXTENDS_DEPTH) {
+    throw new Error(`Tools extends depth exceeds ${MAX_EXTENDS_DEPTH}: ${absPath}`);
   }
-  return parseToolsJsonlFromAbsolutePath(fullPath);
+  const normalizedAbs = path.resolve(absPath);
+  if (stack.has(normalizedAbs)) {
+    throw new Error(`Circular tools extends detected: ${normalizedAbs}`);
+  }
+  if (!isFile(normalizedAbs)) {
+    throw new Error(`Tools file not found: ${normalizedAbs}`);
+  }
+  if (path.extname(normalizedAbs).toLowerCase() !== '.toml') {
+    throw new Error(`Tools file must be .toml: ${normalizedAbs}`);
+  }
+
+  if (isPromptpileDiagnostic()) {
+    console.error('[promptpile] tools load:', normalizedAbs, `(depth ${depth})`);
+  }
+
+  const raw = stripBom(fs.readFileSync(normalizedAbs, 'utf8'));
+  const label = path.basename(normalizedAbs);
+  const table = parseTomlRootTable(raw, label);
+
+  stack.add(normalizedAbs);
+  try {
+    const extendsList = normalizeExtendsField(table, label);
+    let mergedFromExtends: ToolDefinition[] = [];
+    const dir = path.dirname(normalizedAbs);
+    for (const rel of extendsList) {
+      const childAbs = path.resolve(dir, rel);
+      const childTools = loadToolsTomlResolved(childAbs, stack, depth + 1);
+      mergedFromExtends = mergeToolsByName(mergedFromExtends, childTools);
+    }
+    const localTools = parseToolsArrayFromTable(table, label);
+    return mergeToolsByName(mergedFromExtends, localTools);
+  } finally {
+    stack.delete(normalizedAbs);
+  }
 };
 
-/**
- * Load `.tools.toml` from the message directory root only (not recursive).
- * Returns `undefined` if the file is absent. Throws if present but invalid.
- */
-export const loadToolsToml = (directory: string): ToolDefinition[] | undefined => {
-  const fullPath = path.join(directory, TOOLS_TOML);
-  if (!isFile(fullPath)) {
-    return undefined;
-  }
-  return parseToolsTomlFromAbsolutePath(fullPath);
-};
-
-const resolveExplicitToolsPath = (
-  raw: string,
-  baseDir: string
-): { abs: string; ext: string } => {
+const resolveExplicitToolsPath = (raw: string, baseDir: string): string => {
   const abs = path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(baseDir, raw);
-  const ext = path.extname(abs).toLowerCase();
-  if (ext !== '.jsonl' && ext !== '.toml') {
-    throw new Error(`Tools file must end with .jsonl or .toml: ${abs}`);
+  if (path.extname(abs).toLowerCase() !== '.toml') {
+    throw new Error(`Tools file must end with .toml: ${abs}`);
   }
   if (!isFile(abs)) {
     throw new Error(`Tools file not found: ${abs}`);
   }
-  return { abs, ext };
+  return abs;
 };
 
 export type LoadToolsParams = {
@@ -176,51 +214,27 @@ export type LoadToolsParams = {
 };
 
 /**
- * Resolve tools from CLI path, env path, or default `.tools.toml` / `.tools.jsonl` in the scan root.
- * Priority: `toolsFileCli` > `toolsFileEnv` > defaults. Default mode: at most one of `.tools.toml` / `.tools.jsonl`.
+ * Load tools from an explicit `.toml` path only (no JSONL, no scan-directory defaults).
+ * Priority: `toolsFileCli` (relative to cwd) > `toolsFileEnv` (relative to scan root).
+ * Returns `undefined` when neither path is set (caller should require one or `--disable-tool`).
  */
 export const loadTools = (params: LoadToolsParams): ToolDefinition[] | undefined => {
   const { directory, cwd, toolsFileCli, toolsFileEnv } = params;
   const scanAbs = path.resolve(cwd, directory);
 
   if (toolsFileCli) {
-    const { abs, ext } = resolveExplicitToolsPath(toolsFileCli, cwd);
+    const abs = resolveExplicitToolsPath(toolsFileCli, cwd);
     if (isPromptpileDiagnostic()) {
       console.error('[promptpile] tools source: --tools-file', abs);
     }
-    return ext === '.jsonl' ? parseToolsJsonlFromAbsolutePath(abs) : parseToolsTomlFromAbsolutePath(abs);
+    return loadToolsTomlResolved(abs, new Set(), 0);
   }
   if (toolsFileEnv) {
-    const { abs, ext } = resolveExplicitToolsPath(toolsFileEnv, scanAbs);
+    const abs = resolveExplicitToolsPath(toolsFileEnv, scanAbs);
     if (isPromptpileDiagnostic()) {
-      console.error('[promptpile] tools source: TOOLS_FILE env', abs);
+      console.error('[promptpile] tools source: TOOLS_FILE / config', abs);
     }
-    return ext === '.jsonl' ? parseToolsJsonlFromAbsolutePath(abs) : parseToolsTomlFromAbsolutePath(abs);
-  }
-
-  const tomlPath = path.join(scanAbs, TOOLS_TOML);
-  const jsonlPath = path.join(scanAbs, TOOLS_JSONL);
-  const hasToml = isFile(tomlPath);
-  const hasJsonl = isFile(jsonlPath);
-  if (hasToml && hasJsonl) {
-    throw new Error(
-      `Both ${TOOLS_JSONL} and ${TOOLS_TOML} exist in the message directory; keep only one.`
-    );
-  }
-  if (hasToml) {
-    if (isPromptpileDiagnostic()) {
-      console.error('[promptpile] tools source: default', tomlPath);
-    }
-    return loadToolsToml(scanAbs);
-  }
-  if (hasJsonl) {
-    if (isPromptpileDiagnostic()) {
-      console.error('[promptpile] tools source: default', jsonlPath);
-    }
-    return loadToolsJsonl(scanAbs);
-  }
-  if (isPromptpileDiagnostic()) {
-    console.error('[promptpile] tools source: (none under scan directory)', scanAbs);
+    return loadToolsTomlResolved(abs, new Set(), 0);
   }
   return undefined;
 };

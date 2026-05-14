@@ -1,9 +1,6 @@
-import dotenv from 'dotenv';
 import { Config } from './types';
 
-dotenv.config({ quiet: true });
-
-const parseBoolEnv = (value: string | undefined): boolean => {
+export const parseBoolEnv = (value: string | undefined): boolean => {
   if (!value) {
     return false;
   }
@@ -11,7 +8,7 @@ const parseBoolEnv = (value: string | undefined): boolean => {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 };
 
-const trimEnv = (value: string | undefined): string | undefined => {
+export const trimEnv = (value: string | undefined): string | undefined => {
   if (value === undefined) {
     return undefined;
   }
@@ -19,6 +16,9 @@ const trimEnv = (value: string | undefined): string | undefined => {
   return t === '' ? undefined : t;
 };
 
+/**
+ * @deprecated Prefer {@link resolveConfig} in resolve-config.ts; kept for callers that merge manually.
+ */
 export const loadConfig = (options: Partial<Config>): Config => {
   const afterHookEnv = trimEnv(process.env.AFTER_HOOK_PATH);
   const toolsFileEnv = trimEnv(process.env.TOOLS_FILE);

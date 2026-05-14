@@ -14,13 +14,13 @@ if not exist "dist\index.js" (
   exit /b 1
 )
 
-echo [promptpile] node dist\index.js -d "%~dp0test-messages" %*
+echo [promptpile] node dist\index.js -d "%~dp0test-messages" --tools-file "%~dp0test-messages\.tools.toml" %*
 echo.
-node dist\index.js -d "%~dp0test-messages" %*
+node dist\index.js -d "%~dp0test-messages" --tools-file "%~dp0test-messages\.tools.toml" %*
 set EXITCODE=%ERRORLEVEL%
 echo.
 if %EXITCODE% neq 0 (
   echo Run failed with code %EXITCODE%.
-  echo Tip: copy .env.example to .env and set AI_API_KEY, or pass -k YOUR_KEY -b BASE_URL -m MODEL
+  echo Tip: copy .env.example to .env and set AI_API_KEY, or pass -k YOUR_KEY -b BASE_URL -m MODEL. Tools require --tools-file or TOOLS_FILE or --disable-tool.
 )
 exit /b %EXITCODE%

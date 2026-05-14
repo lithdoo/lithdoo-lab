@@ -2,8 +2,7 @@
 import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
-import { getCliOptions } from './cli';
-import { loadConfig } from './config';
+import { resolveConfig } from './resolve-config';
 import {
   appendAssistantTurn,
   appendUserMessage,
@@ -84,9 +83,8 @@ const printToolCallsLines = (toolCalls: ToolCall[] | undefined, quiet: boolean):
 
 async function main(): Promise<void> {
   try {
-    const cliOptions = getCliOptions();
-    const config = loadConfig(cliOptions);
     const cwd = process.cwd();
+    const config = resolveConfig(cwd, process.argv);
 
     if (!config.apiKey) {
       console.error('Error: AI API key is required');
@@ -130,6 +128,13 @@ async function main(): Promise<void> {
         });
       } catch (e) {
         console.error('Error loading tools:', e instanceof Error ? e.message : e);
+        process.exit(1);
+      }
+
+      if (tools === undefined) {
+        console.error(
+          'Error: tools require an explicit .toml path (--tools-file), TOOLS_FILE / PROMPTPILE_TOOLS_FILE / tools_file in config, or use --disable-tool to skip tools.'
+        );
         process.exit(1);
       }
 

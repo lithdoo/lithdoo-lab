@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { stripFinalForwardedArgs, stripObserveRelevantFlags } from './argv-strip';
-import { OBSERVE_DECISION_TOOL_NAME, writeObserveToolsJsonl } from './observe-decision-tool';
+import { OBSERVE_DECISION_TOOL_NAME, writeObserveToolsToml } from './observe-decision-tool';
 import { callsPathForMainOutput, parseObserveDecisionFromCallsFileStrict } from './parse-observe-calls';
 import {
   invokePromptpileAsync,
@@ -148,8 +148,8 @@ export class ObserveReactProcess extends ReactProcess {
 
     try {
       const argv = stripObserveRelevantFlags([...this.ctx.forwardedArgs]);
-      toolsPath = path.join(os.tmpdir(), `promptpile-react-observe-tools-${baseId}.jsonl`);
-      writeObserveToolsJsonl(path.resolve(toolsPath));
+      toolsPath = path.join(os.tmpdir(), `promptpile-react-observe-tools-${baseId}.toml`);
+      writeObserveToolsToml(path.resolve(toolsPath));
       argv.push('--tools-file', path.resolve(toolsPath));
       argv.push('-o', resolvedOut);
 

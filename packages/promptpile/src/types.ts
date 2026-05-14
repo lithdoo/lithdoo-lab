@@ -34,7 +34,7 @@ export interface ToolResultLine {
   name?: string;
 }
 
-/** Single element of the API `tools` array (e.g. one line of `.tools.jsonl`). */
+/** Single element of the API `tools` array (from tools `.toml` `[[tools]]` rows). */
 export type ToolDefinition = Record<string, unknown>;
 
 /** OpenAI Chat Completions `tool_choice` string values (subset used by promptpile). */
