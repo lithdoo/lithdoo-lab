@@ -43,7 +43,7 @@ export const buildPhaseArgv = (phase: ReactPhase, config: ResolvedReactConfig): 
     argv.push('--tool-choice', `function:${OBSERVE_DECISION_TOOL_NAME}`);
   }
 
-  if (config.continueMode) {
+  if (config.continueMode && (phase === 'thought' || phase === 'final')) {
     argv.push('-c');
   }
 

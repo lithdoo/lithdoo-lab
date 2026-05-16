@@ -102,7 +102,7 @@ React CLI
 | **argv** | `buildPhaseArgv('observe', …)` 基础上追加 **临时** `--tools-file`（`react_observe_decision`）、**`-o`**（tmpdir）；**无** `--after-hook-path`。 |
 | **after-hook** | 本轮 argv **不带** `--after-hook-path`，避免钩子处理本轮 `.calls.jsonl`。 |
 | **observe 注入** | 若 `prompts.observe` 非空，则临时 `{name}.system.md` + **`--append-files`**（system 在扫描对话**之后**；Thought/Final 仍用 `--insert-files` 在前）。 |
-| **`-c`** | `continueMode` 为真时在本轮 argv 末尾追加 `-c`。 |
+| **`-c`** | **从不**向 Observe 子进程传 `-c`（决策只读 tmpdir 旁 `.calls.jsonl`，避免非法 tool_calls 写入 `messages/`）。 |
 | **读盘判定** | 子进程成功后，按 `promptpile` 规则读取 **与 `-o` 主文件同目录的 `{basename}.calls.jsonl`**。**文件不存在**或合法解析后 **无 `decision === true`** → 返回 **`false`**（→ `nextStep` 置 **`final`**）。**`decision === true`** → **`true`**。**读盘失败**或 **非空行非法 JSON**、或目标工具行 **格式非法** → **`throw PromptpileReactInvocationError`**（`phase: 'observe'`）。 |
 | **清理** | 解析后 **仅删除**上述 **`.calls.jsonl`**；删除临时 **tools** 与 **inject** 文件；**不删除** `-o` 主输出文件。 |
 | **状态** | **不修改** `currentStep` / `stopReason`；`nextStep` 根据返回值与是否抛异常统一更新。 |
@@ -115,7 +115,7 @@ React CLI
 |------|------|
 | **argv** | `buildPhaseArgv('final', …)` 已含 **`--disable-tool`**；再追加 final 的 **`--insert-files`** 临时 `{name}.system.md`。 |
 | **after-hook** | 本轮 argv **不带** `--after-hook-path`（与转发中显式传入的 hook 解绑），避免 Final 成功后再跑 after-hook。 |
-| **`-c`** | `continueMode` 为真时在本轮 argv 中 **`--insert-files` 之前**追加 `-c`（与 Thought/Observe 一致）。 |
+| **`-c`** | `continueMode` 为真时在本轮 argv 末尾追加 `-c`（与 Thought 一致；Observe 不传 `-c`）。 |
 
 `promptpile` 在 **`--disable-tool`** 下会忽略 **`TOOLS_FILE`** 与扫描目录默认 **`.tools.*`**，无需本包 unset 子进程环境。
 
@@ -125,7 +125,7 @@ React CLI
 |------|------|
 | **`-i`** | 在本进程按 `promptpile` 同款提示从终端读入多行（Ctrl+Z / Ctrl+D 结束），调用 **`file-handler`** 写入下一条 **user** 消息（需已解析出扫描目录，通常来自 `-d` 或 `--config`）。**不会**向子进程传入 `-i`。 |
 | **仅 `-i`** | 读入 **一次** → 跑完整 ReAct（`nextStep` 循环 + `finalAnswer()`）→ 退出。 |
-| **`-i` + `-c`** | **外层循环**：每轮读入 → append → 新建 **`PromptpileReactRuntime`** → ReAct + `finalAnswer()` → 再次读入…直至某轮 **空输入**（报错退出，与 `promptpile -i` 一致）或 **`Ctrl+C`**。内层各 **`react*`** 子进程仍会按需追加 `-c`（续写消息目录）。 |
+| **`-i` + `-c`** | **外层循环**：每轮读入 → append → 新建 **`PromptpileReactRuntime`** → ReAct + `finalAnswer()` → 再次读入…直至某轮 **空输入**（报错退出，与 `promptpile -i` 一致）或 **`Ctrl+C`**。内层 **Thought / Final** 子进程在 `continueMode` 时追加 `-c`；**Observe 不续写** `messages/`。 |
 
 首次安装前请在 **`packages/promptpile`** 执行 **`npm run build`**，以便 **`promptpile/dist/file-handler`** 存在。
 
@@ -152,7 +152,7 @@ npm run build
 | `--tools-file <path>` | Thought 阶段 tools（CLI 路径相对 **cwd**，覆盖 TOML/env） |
 | `--after-hook-path <path>` | **仅 Thought** 阶段；CLI 相对 cwd |
 | `-i, --input` | 本进程写 user 消息，不传 `promptpile -i` |
-| `-c, --continue` | 各阶段子进程 argv 含 `-c`；与 `-i` 同时可外层循环读终端 |
+| `-c, --continue` | **Thought / Final** 子进程 argv 含 `-c`（Observe 不含）；与 `-i` 同时可外层循环读终端 |
 | `--max-step <n>` | 仅本包；未设则入口只跑 **1** 轮 `nextStep` |
 
 **本包不声明、子进程不由用户 `[promptpile]` 配置的项**：`-f` / `--format`、`-o`（主 CLI）、`--tool-choice`、`--insert-files` / `--append-files`（由本包按阶段写入临时 sidecar）。Final 阶段由代码固定 `--disable-tool`；Observe 使用临时 `-o`。

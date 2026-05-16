@@ -132,6 +132,21 @@ thought_llm_api_temperature = 0.3
 
   const finalArgv = buildPhaseArgv('final', cfg);
   assert.ok(finalArgv.includes('--disable-tool'), 'final argv has --disable-tool');
+
+  const cfgCont = resolveReactConfig(tmp, [
+    'node',
+    fakeScript,
+    '--config',
+    'app.toml',
+    '-c'
+  ]);
+  assert.strictEqual(cfgCont.continueMode, true, 'cli -c sets continueMode');
+  const thoughtContArgv = buildPhaseArgv('thought', cfgCont);
+  assert.ok(thoughtContArgv.includes('-c'), 'thought argv has -c when continueMode');
+  const observeContArgv = buildPhaseArgv('observe', cfgCont);
+  assert.ok(!observeContArgv.includes('-c'), 'observe argv must not have -c');
+  const finalContArgv = buildPhaseArgv('final', cfgCont);
+  assert.ok(finalContArgv.includes('-c'), 'final argv has -c when continueMode');
 } finally {
   process.chdir(prevCwd);
   fs.rmSync(tmp, { recursive: true, force: true });
