@@ -25,23 +25,36 @@ const readUtf8IfExists = (absPath: string): string | undefined => {
   }
 };
 
-/**
- * 从 `-d` 目录读取 `.react.*.md`；`core` / `observe` 缺失或仅空白时用内置中文默认；`final` 缺失或空白则为空字符串。
- * 若未传 `directory`，不读盘，`core`/`observe` 用默认，`final` 为空。
- */
-export function loadReactPrompts(directory: string | undefined): ReactPromptTexts {
-  if (directory === undefined || directory.trim() === '') {
-    return {
-      core: DEFAULT_REACT_CORE,
-      final: '',
-      observe: DEFAULT_REACT_OBSERVE
-    };
-  }
+export interface ReactPromptPathConfig {
+  thought?: string;
+  observe?: string;
+  final?: string;
+}
 
-  const root = path.resolve(process.cwd(), directory.trim());
-  const rawCore = readUtf8IfExists(path.join(root, REACT_PROMPT_FILES.core));
-  const rawFinal = readUtf8IfExists(path.join(root, REACT_PROMPT_FILES.final));
-  const rawObserve = readUtf8IfExists(path.join(root, REACT_PROMPT_FILES.observe));
+const resolvePromptPath = (directoryAbs: string, configured: string | undefined, fallbackFile: string): string | undefined => {
+  if (configured !== undefined) {
+    return path.isAbsolute(configured)
+      ? configured
+      : path.resolve(directoryAbs, configured);
+  }
+  const fallback = path.join(directoryAbs, fallbackFile);
+  return fs.existsSync(fallback) ? fallback : undefined;
+};
+
+/**
+ * 从扫描目录读取提示词：配置路径优先，否则 `.react.*.md`，core/observe 再回退内置默认。
+ */
+export function loadReactPromptsFromConfig(
+  directoryAbs: string,
+  paths?: ReactPromptPathConfig
+): ReactPromptTexts {
+  const corePath = resolvePromptPath(directoryAbs, paths?.thought, REACT_PROMPT_FILES.core);
+  const observePath = resolvePromptPath(directoryAbs, paths?.observe, REACT_PROMPT_FILES.observe);
+  const finalPath = resolvePromptPath(directoryAbs, paths?.final, REACT_PROMPT_FILES.final);
+
+  const rawCore = corePath !== undefined ? readUtf8IfExists(corePath) : undefined;
+  const rawObserve = observePath !== undefined ? readUtf8IfExists(observePath) : undefined;
+  const rawFinal = finalPath !== undefined ? readUtf8IfExists(finalPath) : undefined;
 
   const pickCore =
     rawCore !== undefined && rawCore.trim() !== '' ? rawCore.trim() : DEFAULT_REACT_CORE;
@@ -57,4 +70,16 @@ export function loadReactPrompts(directory: string | undefined): ReactPromptText
     final: pickFinal,
     observe: pickObserve
   };
+}
+
+/** @deprecated Use {@link loadReactPromptsFromConfig} with resolved directory. */
+export function loadReactPrompts(directory: string | undefined): ReactPromptTexts {
+  if (directory === undefined || directory.trim() === '') {
+    return {
+      core: DEFAULT_REACT_CORE,
+      final: '',
+      observe: DEFAULT_REACT_OBSERVE
+    };
+  }
+  return loadReactPromptsFromConfig(path.resolve(process.cwd(), directory.trim()));
 }

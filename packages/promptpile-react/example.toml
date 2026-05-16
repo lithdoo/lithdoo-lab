@@ -3,7 +3,6 @@
     name="deepseek"
     model="chat"
     base_url="https://api.deepseek.com/v1"
-    temperature = 0.2
     # 密钥直写（勿提交真实值）；与 api_key_env 二选一即可
     api_key = ""
     # 从「用户/系统环境变量」取值：此处填变量名（如 DEEPSEEK_API_KEY），运行时读取 process.env[该名]。
@@ -29,8 +28,7 @@
     disable_tool = false
     continue = false
     input = true
-    insert_files = './inject.system.md'
-    # append_files = './tail.user.md'
+    # insert_files / append_files 仅供裸跑 promptpile；react 在代码里用 --insert-files
 
     # 从定义的 llm_api 里选
     llm_api = 'deepseek' 
@@ -42,7 +40,34 @@
     llm_api_key_env = ''
     llm_api_model= ''
     llm_api_base_url=''
-    # 省略时默认 0.8；可覆盖 [[llm_api]] 中 profile 的 temperature
     llm_api_temperature = 0.8
 
+[promptpile-react]
+    # 以下参数单独读取，如果未配置则从 promptpile 采用的同名配置
+    dir = './message'
+    quiet = false
+    after_hook = './after_hook.sh'
+    tools_file = './.tools.toml'
+    continue = false
+    input = true
+
+    # 以下是 promptpile-react 的自有配置项
+    max_step = 10
+    thought_prompt = './thought.md'
+    observe_prompt = './observe.md'
+    final_prompt = '.final.md'
+
+    # 可以为每个阶段单独设置 llm_api 未设置则采用 promptpile 的 llm_api 配置
+    thought_llm_api = 'deepseek'
+    observe_llm_api = 'deepseek'
+    final_llm_api = 'deepseek'
     
+    # 这种方式的优先级更高, thought/observe/final 均可配置，如果同时设置 llm_api 可以 override 部分参数，规则同 promptpile 的 llm_api
+    thought_llm_api_key = ''
+    thought_llm_api_model= ''
+    thought_llm_api_key_env = ''
+    thought_llm_api_base_url=''
+    thought_llm_api_temperature = 0.7
+
+
+

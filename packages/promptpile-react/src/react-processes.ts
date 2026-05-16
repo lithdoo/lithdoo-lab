@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { stripFinalForwardedArgs, stripObserveRelevantFlags } from './argv-strip';
+import { buildPhaseArgv } from './build-phase-argv';
 import { OBSERVE_DECISION_TOOL_NAME, writeObserveToolsToml } from './observe-decision-tool';
 import { callsPathForMainOutput, parseObserveDecisionFromCallsFileStrict } from './parse-observe-calls';
 import {
@@ -10,34 +10,32 @@ import {
   type PromptpileInvokeResult,
   type PromptpileSpawnConfig
 } from './promptpile-invoker';
-import { reactDebugLog } from './react-debug-log';
-import { PromptpileReactInvocationError } from './react-errors';
+import {
+  buildPromptpileChildEnv,
+  logObservePhaseLlmOutput,
+  reactDebugLog,
+  type ReactDumpPhase
+} from './react-debug-log';
+import { PromptpileReactInvocationError, type PromptpileReactPhase } from './react-errors';
+import type { ResolvedReactConfig } from './types';
 
 /** 子进程阶段共享依赖（不持有 {@link PromptpileReactRuntime} 引用）。 */
 export type ReactProcessContext = {
   spawn: PromptpileSpawnConfig;
-  cwd: string;
-  quiet: boolean;
-  continueMode: boolean;
-  forwardedArgs: readonly string[];
+  config: ResolvedReactConfig;
 };
 
 export abstract class ReactProcess {
   protected constructor(protected readonly ctx: ReactProcessContext) {}
 
-  protected appendContinueIfNeeded(argv: string[]): void {
-    if (this.ctx.continueMode) {
-      argv.push('-c');
-    }
-  }
-
   protected async assertPromptpileSuccess(
     argv: string[],
-    phase: 'thought' | 'observe'
+    phase: PromptpileReactPhase
   ): Promise<void> {
     const r = await invokePromptpileAsync(this.ctx.spawn, argv, {
-      cwd: this.ctx.cwd,
-      quiet: this.ctx.quiet
+      cwd: this.ctx.config.cwd,
+      quiet: this.ctx.config.quiet,
+      env: buildPromptpileChildEnv(phase)
     });
 
     if (r.error) {
@@ -59,10 +57,14 @@ export abstract class ReactProcess {
   }
 
   /** 不抛异常、不写 `stopReason`；供收尾阶段使用。 */
-  protected async completePromptpileInvokeSoft(argv: string[]): Promise<boolean> {
+  protected async completePromptpileInvokeSoft(
+    argv: string[],
+    phase: ReactDumpPhase
+  ): Promise<boolean> {
     const r = await invokePromptpileAsync(this.ctx.spawn, argv, {
-      cwd: this.ctx.cwd,
-      quiet: this.ctx.quiet
+      cwd: this.ctx.config.cwd,
+      quiet: this.ctx.config.quiet,
+      env: buildPromptpileChildEnv(phase)
     });
 
     if (r.error) {
@@ -93,12 +95,12 @@ export abstract class ReactProcess {
       return;
     }
     if (r.error.code === 'ENOENT') {
-      if (!this.ctx.quiet) {
+      if (!this.ctx.config.quiet) {
         console.error(
           `Error: 找不到命令或脚本 "${this.ctx.spawn.displayName}"。请确认依赖包 promptpile 已 npm install 且已构建 dist，或将 promptpile 加入 PATH；也可设置 PROMPTPILE_BIN 覆盖。`
         );
       }
-    } else if (!this.ctx.quiet) {
+    } else if (!this.ctx.config.quiet) {
       console.error(`Error: 无法启动 promptpile: ${r.error.message}`);
     }
   }
@@ -111,8 +113,7 @@ export class CoreReactProcess extends ReactProcess {
   }
 
   async run(): Promise<void> {
-    const argv = [...this.ctx.forwardedArgs];
-    this.appendContinueIfNeeded(argv);
+    const argv = buildPhaseArgv('thought', this.ctx.config);
 
     const core = this.coreBody.trim();
     let tempPath: string | undefined;
@@ -120,10 +121,10 @@ export class CoreReactProcess extends ReactProcess {
       if (core !== '') {
         tempPath = path.join(
           os.tmpdir(),
-          `promptpile-react-core-${Date.now()}-${randomBytes(8).toString('hex')}.md`
+          `promptpile-react-core-${Date.now()}-${randomBytes(8).toString('hex')}.system.md`
         );
         fs.writeFileSync(tempPath, this.coreBody, 'utf8');
-        argv.push('--system-inject-file', path.resolve(tempPath));
+        argv.push('--insert-files', path.resolve(tempPath));
       }
       reactDebugLog('phase=thought');
       await this.assertPromptpileSuccess(argv, 'thought');
@@ -147,22 +148,26 @@ export class ObserveReactProcess extends ReactProcess {
     const resolvedOut = path.resolve(outPath);
 
     try {
-      const argv = stripObserveRelevantFlags([...this.ctx.forwardedArgs]);
+      const argv = buildPhaseArgv('observe', this.ctx.config);
       toolsPath = path.join(os.tmpdir(), `promptpile-react-observe-tools-${baseId}.toml`);
       writeObserveToolsToml(path.resolve(toolsPath));
       argv.push('--tools-file', path.resolve(toolsPath));
       argv.push('-o', resolvedOut);
 
       if (this.observeBody.trim() !== '') {
-        injectPath = path.join(os.tmpdir(), `promptpile-react-observe-inject-${baseId}.md`);
+        injectPath = path.join(
+          os.tmpdir(),
+          `promptpile-react-observe-inject-${baseId}.system.md`
+        );
         fs.writeFileSync(injectPath, this.observeBody, 'utf8');
-        argv.push('--system-inject-file', path.resolve(injectPath));
+        argv.push('--append-files', path.resolve(injectPath));
       }
-      this.appendContinueIfNeeded(argv);
 
       await this.assertPromptpileSuccess(argv, 'observe');
 
       const callsPath = callsPathForMainOutput(resolvedOut);
+      logObservePhaseLlmOutput(resolvedOut, callsPath);
+
       let cont: boolean;
       try {
         cont = parseObserveDecisionFromCallsFileStrict(callsPath, OBSERVE_DECISION_TOOL_NAME);
@@ -199,19 +204,17 @@ export class FinalReactProcess extends ReactProcess {
     }
 
     reactDebugLog('phase=final');
-    const argv = stripFinalForwardedArgs([...this.ctx.forwardedArgs]);
-    this.appendContinueIfNeeded(argv);
+    const argv = buildPhaseArgv('final', this.ctx.config);
 
     let tempPath: string | undefined;
     try {
       tempPath = path.join(
         os.tmpdir(),
-        `promptpile-react-final-${Date.now()}-${randomBytes(8).toString('hex')}.md`
+        `promptpile-react-final-${Date.now()}-${randomBytes(8).toString('hex')}.system.md`
       );
       fs.writeFileSync(tempPath, this.finalBody, 'utf8');
-      argv.push('--system-inject-file', path.resolve(tempPath));
-      argv.push('--disable-tool');
-      await this.completePromptpileInvokeSoft(argv);
+      argv.push('--insert-files', path.resolve(tempPath));
+      await this.completePromptpileInvokeSoft(argv, 'final');
     } finally {
       this.unlinkQuiet(tempPath);
     }

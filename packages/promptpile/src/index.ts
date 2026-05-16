@@ -11,15 +11,13 @@ import {
 } from './file-handler';
 import { callAI, callAIStream } from './ai-client';
 import { loadTools } from './tools-loader';
-import { mergeSearchToolsPack } from './tools-merge';
 import { buildPromptpileHookEnv, resolveAfterHookScript, runAfterHook } from './after-hook';
 import { effectiveToolChoiceForRequest, parseToolChoiceInput } from './tool-choice';
 import {
-  applySystemInject,
-  normalizeInjectFileContent,
-  readSystemInjectContent,
-  resolveSystemInjectPath
-} from './system-inject';
+  applyAppendFiles,
+  applyInsertFiles,
+  loadSidecarMessages
+} from './message-sidecar-files';
 import { isPromptpileDiagnostic } from './diagnostic-log';
 import type { ChatApiToolChoice, ToolCall } from './types';
 
@@ -138,7 +136,6 @@ async function main(): Promise<void> {
         process.exit(1);
       }
 
-      tools = mergeSearchToolsPack(tools);
     }
 
     let toolChoiceForApi: ChatApiToolChoice | undefined;
@@ -152,19 +149,18 @@ async function main(): Promise<void> {
 
     let messages = buildMessages(files);
 
-    if (config.systemInjectFileCli) {
-      try {
-        const resolved = resolveSystemInjectPath(cwd, config.systemInjectFileCli);
-        const raw = readSystemInjectContent(resolved);
-        const normalized = normalizeInjectFileContent(resolved, raw);
-        const trimmed = normalized.trim();
-        if (trimmed !== '') {
-          messages = applySystemInject(messages, trimmed);
-        }
-      } catch (e) {
-        console.error('Error loading system inject file:', e instanceof Error ? e.message : e);
-        process.exit(1);
+    try {
+      const inserts = loadSidecarMessages(cwd, config.insertFilesCli);
+      if (inserts.length > 0) {
+        messages = applyInsertFiles(messages, inserts);
       }
+      const appends = loadSidecarMessages(cwd, config.appendFilesCli);
+      if (appends.length > 0) {
+        messages = applyAppendFiles(messages, appends);
+      }
+    } catch (e) {
+      console.error('Error loading insert/append files:', e instanceof Error ? e.message : e);
+      process.exit(1);
     }
 
     let resolvedOutput: string | undefined;
@@ -182,7 +178,8 @@ async function main(): Promise<void> {
         config.model,
         messages,
         tools,
-        toolChoiceForApi
+        toolChoiceForApi,
+        config.temperature
       );
       response = result.content;
       toolCalls = result.toolCalls;
@@ -204,6 +201,7 @@ async function main(): Promise<void> {
         messages,
         tools,
         toolChoiceForApi,
+        config.temperature,
         (chunk) => {
           if (!quiet) {
             process.stdout.write(chunk);

@@ -1,46 +1,6 @@
 import { Command } from 'commander';
-
-export interface PromptpileReactOptions {
-  directory?: string;
-  model?: string;
-  apiKey?: string;
-  apiBaseUrl?: string;
-  quiet?: boolean;
-  toolsFile?: string;
-  afterHookPath?: string;
-  /** Local: terminal user message (not forwarded as `promptpile -i`). */
-  inputMode: boolean;
-  /** Local: append assistant reply (not forwarded as `promptpile -c`). */
-  continueMode: boolean;
-  /** Local: max agent loop iterations; not forwarded to `promptpile`. */
-  maxStep?: number;
-}
-
-const program = new Command();
-
-program
-  .name('promptpile-react')
-  .description('Agent loop around the `promptpile` CLI (React-style orchestration; subprocess only)')
-  .version('1.0.0')
-  .option('-d, --directory <path>', 'Directory to scan for message files (forwarded to `promptpile`)')
-  .option('-m, --model <model>', 'Model ID (forwarded to `promptpile`)')
-  .option('-k, --api-key <key>', 'API key (forwarded to `promptpile`)')
-  .option('-b, --api-base-url <url>', 'API base URL (forwarded to `promptpile`)')
-  .option('-q, --quiet', 'Quiet: less stdout from `promptpile` (forwarded)')
-  .option('-i, --input', 'Terminal user message → next user file (this package; not sent as `promptpile -i`)')
-  .option('-c, --continue', 'Append assistant reply to message files (this package; not sent as `promptpile -c`)')
-  .option(
-    '--tools-file <path>',
-    'Load tools from this file only (forwarded; relative paths resolve from cwd for `promptpile`)'
-  )
-  .option(
-    '--after-hook-path <path>',
-    'Run script after success (forwarded; relative paths resolve from cwd for `promptpile`)'
-  )
-  .option(
-    '--max-step <n>',
-    'Max agent loop iterations (this package only; not forwarded to `promptpile`)'
-  );
+import { parseTemperatureInput } from 'promptpile/dist/llm-sampling';
+import type { ReactCliOverrides } from './types';
 
 const trimmed = (v: unknown): string | undefined => {
   if (typeof v !== 'string') {
@@ -50,7 +10,7 @@ const trimmed = (v: unknown): string | undefined => {
   return s === '' ? undefined : s;
 };
 
-const parseMaxStep = (raw: unknown): number | undefined => {
+const parseMaxStepCli = (raw: unknown): number | undefined => {
   if (raw === undefined || raw === null) {
     return undefined;
   }
@@ -66,43 +26,49 @@ const parseMaxStep = (raw: unknown): number | undefined => {
   return n;
 };
 
-/**
- * argv fragment for the `promptpile` executable. Never includes `-i` / `-c`.
- */
-export function buildForwardedPromptpileArgs(options: PromptpileReactOptions): string[] {
-  const args: string[] = [];
-  const d = options.directory;
-  const m = options.model;
-  const k = options.apiKey;
-  const b = options.apiBaseUrl;
-  const t = options.toolsFile;
-  const a = options.afterHookPath;
-  if (d !== undefined) {
-    args.push('-d', d);
-  }
-  if (m !== undefined) {
-    args.push('-m', m);
-  }
-  if (k !== undefined) {
-    args.push('-k', k);
-  }
-  if (b !== undefined) {
-    args.push('-b', b);
-  }
-  if (options.quiet) {
-    args.push('-q');
-  }
-  if (t !== undefined) {
-    args.push('--tools-file', t);
-  }
-  if (a !== undefined) {
-    args.push('--after-hook-path', a);
-  }
-  return args;
-}
+const buildProgram = (): Command => {
+  const program = new Command();
+  program
+    .name('promptpile-react')
+    .description('Agent loop around the `promptpile` CLI (React-style orchestration; subprocess only)')
+    .version('1.0.0')
+    .option('--config <path>', 'TOML config (relative to cwd); reads [promptpile-react] and shared keys')
+    .option('-d, --directory <path>', 'Directory to scan for message files')
+    .option('-m, --model <model>', 'Model ID (overrides all phases when set)')
+    .option('-k, --api-key <key>', 'API key (overrides all phases when set)')
+    .option('-b, --api-base-url <url>', 'API base URL (overrides all phases when set)')
+    .option(
+      '--temperature <n>',
+      'Sampling temperature 0–2 (overrides all phases when set; default 0.8 if unset)'
+    )
+    .option('-q, --quiet', 'Quiet: less stdout from `promptpile` subprocesses')
+    .option('-i, --input', 'Terminal user message → next user file (this package; not sent as `promptpile -i`)')
+    .option('-c, --continue', 'Append assistant reply to message files (subprocesses append `-c` when set)')
+    .option(
+      '--tools-file <path>',
+      'Tools .toml path (CLI relative cwd; overrides TOML/env relative scan directory)'
+    )
+    .option(
+      '--after-hook-path <path>',
+      'After-success hook for Thought phase only (CLI relative cwd)'
+    )
+    .option('--max-step <n>', 'Max successful ReAct iterations (this package only)');
+  return program;
+};
 
-export function getPromptpileReactOptions(): PromptpileReactOptions {
+const userArgvFromProcess = (argv: string[]): string[] => {
+  if (argv.length >= 2 && !argv[0].startsWith('-')) {
+    return argv.slice(2);
+  }
+  return argv;
+};
+
+/** Parse argv without requiring non-empty (used by tests and resolveReactConfig). */
+export const parseReactCli = (argv: string[]): ReactCliOverrides => {
+  const program = buildProgram();
+  program.parse(userArgvFromProcess(argv), { from: 'user' });
   const o = program.opts() as {
+    config?: string;
     directory?: string;
     model?: string;
     apiKey?: string;
@@ -113,25 +79,35 @@ export function getPromptpileReactOptions(): PromptpileReactOptions {
     input?: boolean;
     continue?: boolean;
     maxStep?: string;
+    temperature?: string;
   };
+
+  let temperature: number | undefined;
+  const rawTemperature = o.temperature;
+  if (typeof rawTemperature === 'string' && rawTemperature.trim() !== '') {
+    temperature = parseTemperatureInput(rawTemperature.trim());
+  }
+
   return {
+    configPath: trimmed(o.config),
     directory: trimmed(o.directory),
     model: trimmed(o.model),
     apiKey: trimmed(o.apiKey),
     apiBaseUrl: trimmed(o.apiBaseUrl),
-    quiet: Boolean(o.quiet),
+    quiet: o.quiet === true ? true : undefined,
     toolsFile: trimmed(o.toolsFile),
     afterHookPath: trimmed(o.afterHookPath),
-    inputMode: Boolean(o.input),
-    continueMode: Boolean(o.continue),
-    maxStep: parseMaxStep(o.maxStep)
+    inputMode: o.input === true ? true : undefined,
+    continueMode: o.continue === true ? true : undefined,
+    maxStep: parseMaxStepCli(o.maxStep),
+    temperature
   };
-}
+};
 
 export function parseCli(): void {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
-    program.help({ error: true });
+    buildProgram().help({ error: true });
   }
-  program.parse(process.argv);
+  parseReactCli(process.argv);
 }

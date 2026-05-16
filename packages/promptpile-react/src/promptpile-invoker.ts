@@ -67,11 +67,12 @@ function appendStderrCapped(store: { value: string }, s: string): void {
 export function invokePromptpileAsync(
   spawnConfig: PromptpileSpawnConfig,
   cliArgs: string[],
-  options: { cwd?: string; quiet: boolean }
+  options: { cwd?: string; quiet: boolean; env?: NodeJS.ProcessEnv }
 ): Promise<PromptpileInvokeResult> {
   const cwd = options.cwd ?? process.cwd();
   const argv = [...spawnConfig.argvPrefix, ...cliArgs];
   const stderrStore = { value: '' };
+  const childEnv = options.env ?? process.env;
 
   return new Promise(resolve => {
     let settled = false;
@@ -85,6 +86,7 @@ export function invokePromptpileAsync(
 
     const child = spawn(spawnConfig.command, argv, {
       cwd,
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     });

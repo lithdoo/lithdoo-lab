@@ -1,4 +1,10 @@
 import fetch from 'node-fetch';
+import {
+  beginLlmDump,
+  finishLlmDumpFailure,
+  finishLlmDumpSuccess,
+  type LlmDumpSession
+} from './llm-dump';
 import type { AiCallResult, ChatApiToolChoice, ChatMessage, ToolCall, ToolDefinition } from './types';
 
 interface ChatCompletionResponse {
@@ -35,12 +41,14 @@ const createPayload = (
   messages: ChatMessage[],
   stream: boolean,
   tools: ToolDefinition[] | undefined,
-  toolChoice: ChatApiToolChoice | undefined
+  toolChoice: ChatApiToolChoice | undefined,
+  temperature: number
 ) => {
   const body: Record<string, unknown> = {
     model,
     stream,
-    messages
+    messages,
+    temperature
   };
   if (tools && tools.length > 0) {
     body.tools = tools;
@@ -134,21 +142,34 @@ export const mergeStreamToolCalls = (deltas: StreamDeltaToolCall[]): ToolCall[] 
   return out;
 };
 
+const failDumpAndThrow = (
+  session: LlmDumpSession | null,
+  status: number | null,
+  message: string
+): never => {
+  finishLlmDumpFailure(session, status, message);
+  throw new Error(message);
+};
+
 export const callAI = async (
   apiKey: string,
   apiBaseUrl: string,
   model: string,
   messages: ChatMessage[],
   tools: ToolDefinition[] | undefined,
-  toolChoice: ChatApiToolChoice | undefined
+  toolChoice: ChatApiToolChoice | undefined,
+  temperature: number
 ): Promise<AiCallResult> => {
   const url = `${trimTrailingSlash(apiBaseUrl)}/chat/completions`;
+  const headers = createHeaders(apiKey);
+  const payload = createPayload(model, messages, false, tools, toolChoice, temperature);
+  const dumpSession = beginLlmDump(url, headers, payload);
 
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: createHeaders(apiKey),
-      body: JSON.stringify(createPayload(model, messages, false, tools, toolChoice))
+      headers,
+      body: JSON.stringify(payload)
     });
 
     const data = (await res.json()) as ChatCompletionResponse;
@@ -156,18 +177,24 @@ export const callAI = async (
     if (!res.ok) {
       const detail = data.error?.message ?? res.statusText;
       console.error('Error calling AI API:', detail);
-      throw new Error(`AI API error (${res.status}): ${detail}`);
+      failDumpAndThrow(dumpSession, res.status, `AI API error (${res.status}): ${detail}`);
     }
 
     const msg = data.choices?.[0]?.message;
     const content = msg?.content ?? '';
     const toolCalls = normalizeToolCalls(msg?.tool_calls);
 
+    finishLlmDumpSuccess(dumpSession, res.status, false, content, toolCalls);
     return { content, toolCalls };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AI API error')) {
       throw error;
     }
+    const msg =
+      error instanceof Error
+        ? error.message
+        : 'Failed to call AI API. Please check your network connection and API key.';
+    finishLlmDumpFailure(dumpSession, null, msg);
     console.error('Error calling AI API:', error);
     console.error('Please check your network connection and API key');
     throw new Error('Failed to call AI API. Please check your network connection and API key.');
@@ -181,26 +208,30 @@ export const callAIStream = async (
   messages: ChatMessage[],
   tools: ToolDefinition[] | undefined,
   toolChoice: ChatApiToolChoice | undefined,
+  temperature: number,
   onChunk: (chunk: string) => void
 ): Promise<AiCallResult> => {
   const url = `${trimTrailingSlash(apiBaseUrl)}/chat/completions`;
+  const headers = createHeaders(apiKey);
+  const payload = createPayload(model, messages, true, tools, toolChoice, temperature);
+  const dumpSession = beginLlmDump(url, headers, payload);
 
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: createHeaders(apiKey),
-      body: JSON.stringify(createPayload(model, messages, true, tools, toolChoice))
+      headers,
+      body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as ChatCompletionStreamChunk;
       const detail = data.error?.message ?? res.statusText;
       console.error('Error calling AI API:', detail);
-      throw new Error(`AI API error (${res.status}): ${detail}`);
+      failDumpAndThrow(dumpSession, res.status, `AI API error (${res.status}): ${detail}`);
     }
 
     if (!res.body) {
-      throw new Error('AI API did not return a stream body.');
+      failDumpAndThrow(dumpSession, res.status, 'AI API did not return a stream body.');
     }
 
     let fullText = '';
@@ -218,13 +249,13 @@ export const callAIStream = async (
           continue;
         }
 
-        const payload = line.slice(5).trim();
-        if (!payload || payload === '[DONE]') {
+        const payloadLine = line.slice(5).trim();
+        if (!payloadLine || payloadLine === '[DONE]') {
           continue;
         }
 
         try {
-          const data = JSON.parse(payload) as ChatCompletionStreamChunk;
+          const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
           if (piece) {
@@ -242,10 +273,10 @@ export const callAIStream = async (
     }
 
     if (buffer.trim().startsWith('data:')) {
-      const payload = buffer.trim().slice(5).trim();
-      if (payload && payload !== '[DONE]') {
+      const payloadLine = buffer.trim().slice(5).trim();
+      if (payloadLine && payloadLine !== '[DONE]') {
         try {
-          const data = JSON.parse(payload) as ChatCompletionStreamChunk;
+          const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
           if (piece) {
@@ -265,11 +296,17 @@ export const callAIStream = async (
     const merged = mergeStreamToolCalls(streamToolDeltas);
     const toolCalls = merged.length > 0 ? merged : undefined;
 
+    finishLlmDumpSuccess(dumpSession, res.status, true, fullText, toolCalls);
     return { content: fullText, toolCalls };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AI API error')) {
       throw error;
     }
+    const msg =
+      error instanceof Error
+        ? error.message
+        : 'Failed to call AI API. Please check your network connection and API key.';
+    finishLlmDumpFailure(dumpSession, null, msg);
     console.error('Error calling AI API:', error);
     console.error('Please check your network connection and API key');
     throw new Error('Failed to call AI API. Please check your network connection and API key.');

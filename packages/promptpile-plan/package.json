@@ -30,7 +30,7 @@
   "dependencies": {
     "@types/node": "^25.5.2",
     "commander": "^14.0.3",
-    "typescript": "^5.0.0"
+    "typescript": "~5.9.3"
   },
   "devDependencies": {
     "ts-node": "^10.9.2"

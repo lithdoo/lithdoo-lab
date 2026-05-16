@@ -51,11 +51,9 @@
 
 实现 MCP 工具列表前，需对齐 promptpile 里已有的两条路径：
 
-1. **静态工具加载** — [`packages/promptpile/src/tools-loader.ts`](../../promptpile/src/tools-loader.ts) 的 `loadTools()`：从显式 **`.toml`**（可含 `extends`）或 `TOOLS_FILE` / `--tools-file` 解析出 OpenAI 形的 `tools[]`。
+1. **静态工具加载** — [`packages/promptpile/src/tools-loader.ts`](../../promptpile/src/tools-loader.ts) 的 `loadTools()`：从显式 **`.toml`**（可含 `extends`）或 `TOOLS_FILE` / `--tools-file` 解析出 OpenAI 形的 `tools[]`；**仅**包含用户/导出定义的工具，无内置 Glob/Grep。
 
-2. **合并扩展** — [`packages/promptpile/src/tools-merge.ts`](../../promptpile/src/tools-merge.ts) 的 `mergeSearchToolsPack()`：在已有工具之后追加一批定义，并按 **`function.name` 去重**（已存在的名字不再追加）。
-
-MCP 集成在语义上应贴近 **merge**：导出到 `.tools.toml` 时使用稳定前缀（如 `mcp__<serverId>__<toolName>`），避免与静态工具、search pack 重名冲突。详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)。
+MCP 集成：通过 **`export-tools`** 写入 `.tools.toml`，使用稳定前缀（如 `mcp__<serverId>__<toolName>`），避免与静态工具重名。详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)。
 
 ---
 
@@ -162,7 +160,7 @@ flowchart LR
 
 ### 未选方案：库合并进 promptpile
 
-在 `mergeSearchToolsPack` 之后动态拉取 MCP 工具：一条命令即可，但需改 promptpile 与依赖生命周期。**当前不采用**；若需要可另起设计。
+在 promptpile 进程内动态拉取 MCP 工具：一条命令即可，但需改 promptpile 与依赖生命周期。**当前不采用**；使用 **`export-tools` → `.tools.toml` → `--tools-file`**。
 
 ---
 

@@ -49,6 +49,28 @@ try {
 
   const cfg3 = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key', '-m', 'm-cli']);
   assert.strictEqual(cfg3.model, 'm-cli', 'cli overrides toml');
+
+  const cfgDefaultTemp = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.strictEqual(cfgDefaultTemp.temperature, 0.8, 'default temperature when unset');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\nllm_api_temperature = 0.3\n'
+  );
+  const cfgTomlTemp = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.strictEqual(cfgTomlTemp.temperature, 0.3, 'toml llm_api_temperature');
+
+  const cfgCliTemp = resolveConfig(tmp, [
+    'node',
+    fakeScript,
+    '--config',
+    'app.toml',
+    '-k',
+    'key',
+    '--temperature',
+    '0.1'
+  ]);
+  assert.strictEqual(cfgCliTemp.temperature, 0.1, 'cli --temperature overrides toml');
 } finally {
   process.chdir(prevCwd);
   if (hadModel) {

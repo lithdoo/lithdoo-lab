@@ -5,6 +5,11 @@ import { parseCli } from './cli';
 import { loadEnvFile } from './env-file';
 import { loadTomlConfigFile, type ParsedTomlConfig } from './toml-config';
 import { parseBoolEnv, trimEnv } from './config';
+import {
+  coerceTemperatureValue,
+  DEFAULT_TEMPERATURE,
+  parseTemperatureInput
+} from './llm-sampling';
 
 /** Pre-merge shape: booleans use undefined = “本层未写”. */
 interface FlatLayer {
@@ -21,8 +26,10 @@ interface FlatLayer {
   toolsFileEnv?: string;
   afterHookEnv?: string;
   toolChoice?: string;
-  systemInjectFile?: string;
+  insertFiles?: string;
+  appendFiles?: string;
   disableTool?: boolean;
+  temperature?: number;
 }
 
 const trim = (v: string | undefined): string | undefined => {
@@ -42,6 +49,14 @@ const getStr = (r: Record<string, unknown>, key: string): string | undefined => 
     return trim(String(v));
   }
   return undefined;
+};
+
+const getNum = (r: Record<string, unknown>, key: string): number | undefined => {
+  const v = r[key];
+  if (v === undefined) {
+    return undefined;
+  }
+  return coerceTemperatureValue(v);
 };
 
 const getBool = (r: Record<string, unknown>, key: string): boolean | undefined => {
@@ -117,13 +132,22 @@ const mapProcessEnv = (): FlatLayer => {
   if (tc !== undefined) {
     out.toolChoice = tc;
   }
-  const si = trimEnv(e.PROMPTPILE_SYSTEM_INJECT_FILE);
-  if (si !== undefined) {
-    out.systemInjectFile = si;
+  const ins = trimEnv(e.PROMPTPILE_INSERT_FILES);
+  if (ins !== undefined) {
+    out.insertFiles = ins;
+  }
+  const app = trimEnv(e.PROMPTPILE_APPEND_FILES);
+  if (app !== undefined) {
+    out.appendFiles = app;
   }
   const dis = envBool(e.PROMPTPILE_DISABLE_TOOL);
   if (dis !== undefined) {
     out.disableTool = dis;
+  }
+  const temp =
+    trimEnv(e.PROMPTPILE_LLM_API_TEMPERATURE) ?? trimEnv(e.AI_TEMPERATURE);
+  if (temp !== undefined) {
+    out.temperature = parseTemperatureInput(temp);
   }
   return out;
 };
@@ -183,13 +207,21 @@ const mapDotEnvRecord = (r: Record<string, string>): FlatLayer => {
   if (tc !== undefined) {
     out.toolChoice = tc;
   }
-  const si = get('PROMPTPILE_SYSTEM_INJECT_FILE');
-  if (si !== undefined) {
-    out.systemInjectFile = si;
+  const ins = get('PROMPTPILE_INSERT_FILES');
+  if (ins !== undefined) {
+    out.insertFiles = ins;
+  }
+  const app = get('PROMPTPILE_APPEND_FILES');
+  if (app !== undefined) {
+    out.appendFiles = app;
   }
   const dis = envBool(r.PROMPTPILE_DISABLE_TOOL);
   if (dis !== undefined) {
     out.disableTool = dis;
+  }
+  const temp = get('PROMPTPILE_LLM_API_TEMPERATURE') ?? get('AI_TEMPERATURE');
+  if (temp !== undefined) {
+    out.temperature = parseTemperatureInput(temp);
   }
   return out;
 };
@@ -240,9 +272,13 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   if (im !== undefined) {
     out.inputMode = im;
   }
-  const si = getStr(p, 'system_inject_file');
-  if (si !== undefined) {
-    out.systemInjectFile = si;
+  const ins = getStr(p, 'insert_files');
+  if (ins !== undefined) {
+    out.insertFiles = ins;
+  }
+  const app = getStr(p, 'append_files');
+  if (app !== undefined) {
+    out.appendFiles = app;
   }
 
   const profileName = getStr(p, 'llm_api');
@@ -250,6 +286,7 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   let baseUrl = getStr(p, 'llm_api_base_url');
   let apiKey = getStr(p, 'llm_api_key');
   let apiKeyEnv = getStr(p, 'llm_api_key_env');
+  let temperature = getNum(p, 'llm_api_temperature');
   if (profileName) {
     const prof = parsed.llmApis.find(
       x => x.name.toLowerCase() === profileName!.toLowerCase()
@@ -259,6 +296,7 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
       baseUrl = baseUrl ?? trim(prof.base_url);
       apiKey = apiKey ?? trim(prof.api_key);
       apiKeyEnv = apiKeyEnv ?? trim(prof.api_key_env);
+      temperature = temperature ?? prof.temperature;
     }
   }
   if (model !== undefined) {
@@ -272,6 +310,9 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   }
   if (apiKeyEnv !== undefined) {
     out.apiKeyEnvName = apiKeyEnv;
+  }
+  if (temperature !== undefined) {
+    out.temperature = temperature;
   }
   return out;
 };
@@ -296,6 +337,32 @@ const pickOptStr = (
   cwd: string | undefined,
   proc: string | undefined
 ): string | undefined => trim(cli) ?? trim(toml) ?? trim(scan) ?? trim(cwd) ?? trim(proc);
+
+const pickNum = (
+  cli: number | undefined,
+  toml: number | undefined,
+  scan: number | undefined,
+  cwd: number | undefined,
+  proc: number | undefined,
+  fallback: number
+): number => {
+  if (cli !== undefined) {
+    return cli;
+  }
+  if (toml !== undefined) {
+    return toml;
+  }
+  if (scan !== undefined) {
+    return scan;
+  }
+  if (cwd !== undefined) {
+    return cwd;
+  }
+  if (proc !== undefined) {
+    return proc;
+  }
+  return fallback;
+};
 
 const pickBool = (
   cli: boolean | undefined,
@@ -334,7 +401,8 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   continueMode: cli.continueMode,
   inputMode: cli.inputMode,
   toolChoice: trim(cli.toolChoice),
-  disableTool: cli.disableTool
+  disableTool: cli.disableTool,
+  temperature: cli.temperature
 });
 
 export const computeDir0 = (
@@ -354,7 +422,18 @@ export const computeDir0 = (
 };
 
 export const resolveConfig = (cwd: string, argv: string[]): Config => {
-  const { configPath: rawConfigPath, options: cliPartial } = parseCli(argv);
+  let cliPartial: Partial<Config>;
+  let configPath: string | undefined;
+  try {
+    const parsed = parseCli(argv);
+    configPath = parsed.configPath;
+    cliPartial = parsed.options;
+  } catch (e) {
+    console.error('Error: Invalid CLI options:', e instanceof Error ? e.message : e);
+    process.exit(1);
+  }
+
+  const rawConfigPath = configPath;
 
   let tomlParsed: ParsedTomlConfig = { promptpile: {}, llmApis: [] };
   if (rawConfigPath !== undefined && rawConfigPath !== '') {
@@ -518,12 +597,29 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     procLayer.toolChoice
   );
 
-  const systemInjectMerged = pickOptStr(
-    cliPartial.systemInjectFileCli,
-    tomlLayer.systemInjectFile,
-    scanLayer.systemInjectFile,
-    cwdLayer.systemInjectFile,
-    procLayer.systemInjectFile
+  const insertFilesMerged = pickOptStr(
+    cliPartial.insertFilesCli,
+    tomlLayer.insertFiles,
+    scanLayer.insertFiles,
+    cwdLayer.insertFiles,
+    procLayer.insertFiles
+  );
+
+  const appendFilesMerged = pickOptStr(
+    cliPartial.appendFilesCli,
+    tomlLayer.appendFiles,
+    scanLayer.appendFiles,
+    cwdLayer.appendFiles,
+    procLayer.appendFiles
+  );
+
+  const temperature = pickNum(
+    cliLayer.temperature,
+    tomlLayer.temperature,
+    scanLayer.temperature,
+    cwdLayer.temperature,
+    procLayer.temperature,
+    DEFAULT_TEMPERATURE
   );
 
   return {
@@ -531,6 +627,7 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     model,
     apiKey,
     apiBaseUrl,
+    temperature,
     format,
     continueMode,
     inputMode,
@@ -538,7 +635,8 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     quiet,
     toolsFileCli: cliPartial.toolsFileCli,
     toolsFileEnv,
-    systemInjectFileCli: systemInjectMerged,
+    insertFilesCli: insertFilesMerged,
+    appendFilesCli: appendFilesMerged,
     afterHookCli: cliPartial.afterHookCli,
     afterHookEnv,
     toolChoice,

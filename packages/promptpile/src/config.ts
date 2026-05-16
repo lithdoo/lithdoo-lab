@@ -1,3 +1,4 @@
+import { DEFAULT_TEMPERATURE } from './llm-sampling';
 import { Config } from './types';
 
 export const parseBoolEnv = (value: string | undefined): boolean => {
@@ -28,6 +29,7 @@ export const loadConfig = (options: Partial<Config>): Config => {
     model: options.model || process.env.AI_MODEL || 'gpt-3.5-turbo',
     apiKey: options.apiKey || process.env.AI_API_KEY || '',
     apiBaseUrl: options.apiBaseUrl || process.env.AI_API_BASE_URL || 'https://api.openai.com/v1',
+    temperature: options.temperature ?? DEFAULT_TEMPERATURE,
     format: options.format || 'text',
     continueMode: options.continueMode ?? false,
     inputMode: options.inputMode ?? false,
@@ -35,7 +37,8 @@ export const loadConfig = (options: Partial<Config>): Config => {
     quiet: options.quiet ?? parseBoolEnv(process.env.QUIET),
     toolsFileCli: options.toolsFileCli,
     toolsFileEnv,
-    systemInjectFileCli: options.systemInjectFileCli,
+    insertFilesCli: options.insertFilesCli,
+    appendFilesCli: options.appendFilesCli,
     afterHookCli: options.afterHookCli,
     afterHookEnv,
     toolChoice: options.toolChoice ?? toolChoiceEnv,

@@ -19,7 +19,7 @@
 
 ## 已有示例
 
-- `promptpile-mcp-react/`：`run-example.bat` 串联网关、`messages/`、`export-tools` 与 **`promptpile-react -i -c`**；含 `.react.*.md` 模板
+- `promptpile-mcp-react/`：`run-example.bat` 串联网关、`messages/`、`export-tools` 与 **`promptpile-react --config promptpile-react.toml`**；根目录 `.react.*.md` 由 TOML 引用
 - `promptpile-mcp-launcher/`：`promptpile-mcp launch` + filesystem / fetch / Playwright MCP（stdio + 本机 HTTP 网关）最小示例
 - `hostra-open-web/`：通过 `hostra` 的 JSON-RPC `openWindow` 打开本地网页
 - `hostra-web-editor/`：通过 `hostra` 打开 `web-editor-component` 编辑器窗口，并联动 `lsp-ws-server`

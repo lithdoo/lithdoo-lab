@@ -10,7 +10,7 @@
 
 | 组件 | 职责 |
 |------|------|
-| **promptpile** | 组装消息目录、`loadTools()`、可选 `mergeSearchToolsPack`，调用单次 `chat/completions`；**不执行**工具；工具轨迹见 **`[idx]assistant.calls.jsonl`**（continue）与 **`[idx]assistant.result.jsonl`**，以及 **`-o`** 主输出旁的 **`{basename}.calls.jsonl`**（见 [`after-hook.ts`](../promptpile/src/after-hook.ts)）。二者后缀同为 `.calls.jsonl`，通过文件名模式区分。 |
+| **promptpile** | 组装消息目录、`loadTools()`（仅显式 `.toml` / `TOOLS_FILE`），调用单次 `chat/completions`；**不执行**工具；工具轨迹见 **`[idx]assistant.calls.jsonl`**（continue）与 **`[idx]assistant.result.jsonl`**，以及 **`-o`** 主输出旁的 **`{basename}.calls.jsonl`**（见 [`after-hook.ts`](../promptpile/src/after-hook.ts)）。二者后缀同为 `.calls.jsonl`，通过文件名模式区分。 |
 | **promptpile-mcp** | 将 MCP `tools/list` 映射为 OpenAI function 形态；可选通过 MCP `tools/call` 执行模型产生的调用；**不修改 promptpile 源码**。 |
 
 **OpenAI 工具条目形状**（与 [`tools-loader.ts`](../promptpile/src/tools-loader.ts) 一致）：

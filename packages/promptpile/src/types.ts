@@ -61,6 +61,8 @@ export interface Config {
   model: string;
   apiKey: string;
   apiBaseUrl: string;
+  /** Merged sampling temperature; default 0.8 when unset at all layers. */
+  temperature: number;
   format: 'text' | 'json';
   continueMode: boolean;
   inputMode: boolean;
@@ -70,8 +72,10 @@ export interface Config {
   toolsFileCli?: string;
   /** Env `TOOLS_FILE`: relative to scan directory root when relative. */
   toolsFileEnv?: string;
-  /** CLI `--system-inject-file`: relative to cwd when relative. */
-  systemInjectFileCli?: string;
+  /** Merged `insert_files` / `--insert-files`: pipe-separated paths, relative to cwd. */
+  insertFilesCli?: string;
+  /** Merged `append_files` / `--append-files`: pipe-separated paths, relative to cwd. */
+  appendFilesCli?: string;
   /** CLI `--after-hook-path`: relative to cwd when relative. */
   afterHookCli?: string;
   /** Env `AFTER_HOOK_PATH`: relative to scan directory when relative. */
@@ -81,7 +85,7 @@ export interface Config {
    * Parsed to {@link ChatApiToolChoice} when building the API body.
    */
   toolChoice?: string;
-  /** CLI `--disable-tool`: skip loading tools from any source and omit built-in Glob/Grep pack. */
+  /** CLI `--disable-tool`: skip loading tools from any source. */
   disableTool?: boolean;
 }
 

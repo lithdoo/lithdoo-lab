@@ -10,7 +10,7 @@
 #   --tool-choice=auto \
 #   --tools-file=./.tools.toml \
 #   --input \
-#   --system-inject-file=./test.md \
+#   --insert-files=./inject.system.md \
 #   --model= \
 #   --api-key= \
 #   --api-base-url=
@@ -27,8 +27,10 @@
 # （disable_tool=false 不传 --disable-tool；为 true 时追加 --disable-tool）
 # （continue=false 不传 --continue；为 true 时追加 --continue）
 # --input — input=true，终端读入用户消息（无 = 值）。
-# --system-inject-file=./test.md — system_inject_file。
+# --insert-files=./inject.system.md — insert_files；多路径用 | 分隔；每文件须为 {name}.{role}.md。
+# --append-files=./tail.user.md — append_files（可选）；规则同上，消息追加在扫描目录消息之后。
 # --model= — llm_api_model，可与 toml 中 llm_api 所选 profile 合并。
+# --temperature=0.7 — llm_api_temperature，覆盖 TOML/profile；未设置时默认 0.8。
 # --api-key= — llm_api_key。
 # --api-base-url= — llm_api_base_url。
 # （llm_api 选用哪档 profile、llm_api_key_env 从其它环境变量名取密钥：无单独 CLI 时由 --config 读 TOML 或见 example.env 中 PROMPTPILE_LLM_*）

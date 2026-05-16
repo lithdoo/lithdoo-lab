@@ -1,0 +1,20 @@
+[[llm_api]]
+name = "deepseek"
+model = "deepseek-chat"
+base_url = "https://api.deepseek.com/v1"
+api_key_env = "DEEPSEEK_API_KEY"
+
+[promptpile-react]
+dir = "./messages"
+llm_api = "deepseek"
+tools_file = ".tools.toml"
+after_hook = "../after-hook-mcp-exec-calls.bat"
+max_step = 8
+input = true
+continue = true
+quiet = false
+
+thought_prompt = "../.react.core.md"
+observe_prompt = "../.react.observe.md"
+observe_llm_api_temperature = 0.2
+final_prompt = "../.react.final.md"

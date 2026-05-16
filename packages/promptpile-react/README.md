@@ -15,16 +15,47 @@
 - **`finalAnswer()`**：委托 **`reactFinalAnswerProcess()`**（见下文）；若 `.react.final.md` 非空则发起一次带 final 注入的 `promptpile`。
 - **`stopReason`**：`error` 表示 thought/observe 子进程失败或 observe 读 **`.calls.jsonl` 解析失败**（`nextStep` **catch** `PromptpileReactInvocationError` 等异常后写入，**不向进程外再抛**）；`final` 表示 observe 正常返回 **`false`**（判定不继续）；`max_step` 表示达到步数上限。
 
+## 配置（`resolveReactConfig`）
+
+入口在 [`resolve-react-config.ts`](src/resolve-react-config.ts) 合并配置；子进程 argv 由 [`build-phase-argv.ts`](src/build-phase-argv.ts) 按阶段生成，**不传** `--config` 给 `promptpile`。
+
+**合并优先级：**
+
+```text
+React CLI
+  > [promptpile-react] TOML（--config 指定文件）
+  > PROMPTPILE_REACT_*（扫描目录 .env → cwd .env → process.env）
+  > [promptpile] TOML 同名共享键（仅 dir / quiet / tools_file / continue / input / after_hook / llm_api / llm_api_temperature 作默认 profile）
+  > PROMPTPILE_* / TOOLS_FILE 等（扫描目录 .env → cwd .env → process.env）
+  > 内置默认
+```
+
+- **仅 react 消费**：`max_step`、`thought_prompt` / `observe_prompt` / `final_prompt`、分阶段 `*_llm_api` / `*_llm_api_temperature` 等；合并后经 `buildPhaseArgv` 向子进程传 `-m/-k/-b/--temperature`。
+- **不读取、不转发**：`[promptpile]` 的 `format`、`output`、`tool_choice`、`disable_tool`、`insert_files`、`append_files`（ReAct 各阶段在代码里固定行为，如 Observe 临时 `-o`、Final `--disable-tool`；Thought/Final 用 `--insert-files`，Observe 用 `--append-files` 注入 system）。
+- 示例：[`example.toml`](example.toml)、[`example.env`](example.env)、[`example.sh`](example.sh)。
+
 ## 编排调试（`PROMPTPILE_REACT_DEBUG`）
 
-- 设置环境变量 **`PROMPTPILE_REACT_DEBUG`** 为 **`1` / `true` / `yes` / `on`**（大小写不敏感）时，本包向 **stderr** 输出少量 **`[promptpile-react]`** 前缀行，便于对照 ReAct 阶段与会话边界。
-- **与 `promptpile` 的 `PROMPTPILE_DEBUG` 无关**：后者会打开子进程内工具解析等诊断；若只需编排层日志，只设 **`PROMPTPILE_REACT_DEBUG`**；两者可同时开启。
-- **与 `-q` 的关系**：编排调试行**仍输出到 stderr**，即使传入 **`promptpile-react -q`**（与 `promptpile` 文档中 `PROMPTPILE_DEBUG` 在 `-q` 下仍输出 stderr 的思路一致）。
-- 典型行（不含子进程流式正文）：**`session start maxStep=…`** / **`phase=thought`** / **`phase=observe continue=true|false`** / **`phase=final`** 或 **`phase=final skip`** / **`inputRound userAppended`**（`-i` 落盘后）/ **`session end stopReason=…`**。
+设置 **`PROMPTPILE_REACT_DEBUG`** 为 **`1` / `true` / `yes` / `on`** 时同时启用：
 
-## React 提示词文件（`-d` 目录下）
+1. **stderr 阶段日志** — **`[promptpile-react]`** 前缀行（阶段边界、Observe 读盘摘要等）。**与 `promptpile` 的 `PROMPTPILE_DEBUG` 无关**；与 **`-q`** 无关（调试行仍写 stderr）。典型行：**`session start maxStep=…`** / **`phase=thought`** / **`phase=observe llm_reply:`** / **`phase=observe tool_calls:`** / **`phase=observe continue=true|false`** / **`phase=final`** / **`session end stopReason=…`**。
 
-在 **`-d` 指向的目录** 根下可放置三个 Markdown 文件（与消息文件约定同级），供本包读取用户自定义提示词：
+2. **LLM 请求/响应 JSON 落盘** — 每个 **Thought / Observe / Final** 子进程在 **`promptpile` 的 cwd**（`ResolvedReactConfig.cwd`，即 `--config` 所在目录）写入：
+   - **`{timestamp}-{rand}.req.json`** — URL、脱敏 headers、请求 body
+   - **`{timestamp}-{rand}.res.json`** — 归一化 `content` / `tool_calls` 或错误信息  
+   JSON 内 **`tag`** 为 `thought` / `observe` / `final`。**勿提交**这些文件。
+
+裸跑 **`promptpile`**（非 react）时可用 **`PROMPTPILE_DUMP_LLM=1`** 单独落盘（见 `packages/promptpile` README）。
+
+## React 提示词
+
+在 **扫描目录**（`-d` / `dir` 解析后的绝对路径）下读取提示词，优先级：
+
+1. TOML / env：`thought_prompt`、`observe_prompt`、`final_prompt`（相对扫描目录）
+2. 回退：`.react.core.md`、`.react.observe.md`、`.react.final.md`
+3. `core` / `observe` 仍缺省则用内置中文默认；`final` 空白则跳过 Final 子进程
+
+也可仅在目录内放置下列文件（无 TOML 路径时）：
 
 | 文件名 | 说明 |
 |--------|------|
@@ -57,8 +88,8 @@
 
 | 行为 | 说明 |
 |------|------|
-| **core 注入** | 将 `prompts.core` 写入 **临时 `.md` 文件**（`os.tmpdir()`），向本次 argv 追加 **`--system-inject-file` 绝对路径**；调用结束删除临时文件。不在 `-d` 消息目录内新增 `[idx]*.md` 承载 core。 |
-| **`-c` / `--continue`** | 当 CLI 传入 `-c`（`continueMode` 为真）时，**仅在本方法**拼出的 argv 拷贝末尾追加 `-c`，交给 `promptpile` 以保持与消息目录续写语义一致。主流程 `buildForwardedPromptpileArgs()` 仍 **不** 转发 `-c`。 |
+| **core 注入** | 将 `prompts.core` 写入 **临时 `{name}.system.md`**（`os.tmpdir()`），向本次 argv 追加 **`--insert-files` 绝对路径**；调用结束删除临时文件。不在 `-d` 消息目录内新增 `[idx]*.md` 承载 core。 |
+| **`-c` / `--continue`** | `continueMode` 为真时，`buildPhaseArgv('thought', …)` 末尾含 `-c`。 |
 | **工具与落盘** | `[idx]assistant.calls.jsonl` / `[idx]assistant.result.jsonl` 及工具执行由 **`promptpile`** 负责；本方法 **不写**、不解析上述文件。 |
 | **错误** | 子进程启动失败或非零退出 → **`throw PromptpileReactInvocationError`**（`phase: 'thought'`）。**不修改** `currentStep` / `stopReason`（由 `nextStep` 的 `try/catch` 或外层处理）。 |
 
@@ -68,9 +99,9 @@
 
 | 行为 | 说明 |
 |------|------|
-| **argv** | 从 `forwardedArgs` **拷贝**后 **移除** `--tools-file`、`-o` / `--output`、`--after-hook-path` 及其参数；再追加 **临时** `--tools-file`（`.toml`，内含工具 **`react_observe_decision`**；为 `promptpile` 扁平 `[[tools]]` 条目）、**`-o`** 指向临时 `.md`（主输出保留在磁盘供排查）。 |
+| **argv** | `buildPhaseArgv('observe', …)` 基础上追加 **临时** `--tools-file`（`react_observe_decision`）、**`-o`**（tmpdir）；**无** `--after-hook-path`。 |
 | **after-hook** | 本轮 argv **不带** `--after-hook-path`，避免钩子处理本轮 `.calls.jsonl`。 |
-| **observe 注入** | 若 `prompts.observe` 非空，则临时 `.md` + `--system-inject-file`（与 thought 同理）。 |
+| **observe 注入** | 若 `prompts.observe` 非空，则临时 `{name}.system.md` + **`--append-files`**（system 在扫描对话**之后**；Thought/Final 仍用 `--insert-files` 在前）。 |
 | **`-c`** | `continueMode` 为真时在本轮 argv 末尾追加 `-c`。 |
 | **读盘判定** | 子进程成功后，按 `promptpile` 规则读取 **与 `-o` 主文件同目录的 `{basename}.calls.jsonl`**。**文件不存在**或合法解析后 **无 `decision === true`** → 返回 **`false`**（→ `nextStep` 置 **`final`**）。**`decision === true`** → **`true`**。**读盘失败**或 **非空行非法 JSON**、或目标工具行 **格式非法** → **`throw PromptpileReactInvocationError`**（`phase: 'observe'`）。 |
 | **清理** | 解析后 **仅删除**上述 **`.calls.jsonl`**；删除临时 **tools** 与 **inject** 文件；**不删除** `-o` 主输出文件。 |
@@ -82,9 +113,9 @@
 
 | 行为 | 说明 |
 |------|------|
-| **argv** | 从 `forwardedArgs` **拷贝**后 **仅**移除 **`--after-hook-path`**、`-o` / `--output` 及其参数；**不**移除 **`--tools-file`**——是否禁用工具**仅**由 **`promptpile`** 的 **`--disable-tool`** 控制（见 [promptpile 文档](../promptpile/README.md)）。去掉孤立的 **`--disable-tool`** 后再追加 **`--system-inject-file`**（final 提示词临时文件），**argv 末尾**再追加 **`--disable-tool`**（仅此一处关闭工具）。 |
+| **argv** | `buildPhaseArgv('final', …)` 已含 **`--disable-tool`**；再追加 final 的 **`--insert-files`** 临时 `{name}.system.md`。 |
 | **after-hook** | 本轮 argv **不带** `--after-hook-path`（与转发中显式传入的 hook 解绑），避免 Final 成功后再跑 after-hook。 |
-| **`-c`** | `continueMode` 为真时在本轮 argv 中 **`--system-inject-file` 之前**追加 `-c`（与 Thought/Observe 一致）。 |
+| **`-c`** | `continueMode` 为真时在本轮 argv 中 **`--insert-files` 之前**追加 `-c`（与 Thought/Observe 一致）。 |
 
 `promptpile` 在 **`--disable-tool`** 下会忽略 **`TOOLS_FILE`** 与扫描目录默认 **`.tools.*`**，无需本包 unset 子进程环境。
 
@@ -92,7 +123,7 @@
 
 | 标志 | 行为 |
 |------|------|
-| **`-i`** | **必须先**带 **`-d`**。在本进程按 `promptpile` 同款提示从终端读入多行（Ctrl+Z / Ctrl+D 结束），调用 **`promptpile`** 的 **`scanDirectory` + `appendUserMessage`** 写入下一条 **user** 消息文件。**不会**向子进程传入 `-i`。 |
+| **`-i`** | 在本进程按 `promptpile` 同款提示从终端读入多行（Ctrl+Z / Ctrl+D 结束），调用 **`file-handler`** 写入下一条 **user** 消息（需已解析出扫描目录，通常来自 `-d` 或 `--config`）。**不会**向子进程传入 `-i`。 |
 | **仅 `-i`** | 读入 **一次** → 跑完整 ReAct（`nextStep` 循环 + `finalAnswer()`）→ 退出。 |
 | **`-i` + `-c`** | **外层循环**：每轮读入 → append → 新建 **`PromptpileReactRuntime`** → ReAct + `finalAnswer()` → 再次读入…直至某轮 **空输入**（报错退出，与 `promptpile -i` 一致）或 **`Ctrl+C`**。内层各 **`react*`** 子进程仍会按需追加 `-c`（续写消息目录）。 |
 
@@ -111,44 +142,26 @@ npm run build
 
 ## CLI 选项
 
-与 [promptpile 说明](../promptpile/README.md) 中相关开关对齐；本包只声明下面列出的项。
-
-### 会转发给 `promptpile` 的参数
-
-以下选项由 `buildForwardedPromptpileArgs()` 拼成 **转发 argv**，供 **`reactThoughtProcess` / `reactObserveProcess` / `reactFinalAnswerProcess`** 在各自拷贝上追加注入项使用；**不含** `-i`、`-c`、`-o`（`-c` / 临时 `-o` 仅出现在上述方法的子进程 argv 中，见上文）。**Final** 子进程会在拷贝上 **剥离** **`--after-hook-path`**（见「ReAct 收尾」）；**`--tools-file`** 仍随转发传入，**工具是否下发**由 **`--disable-tool`** 单独控制。**`nextStep` 不再**以此 argv 直接额外调用一轮「裸」`promptpile`。
-
 | 选项 | 说明 |
 |------|------|
-| `-d, --directory <path>` | 扫描消息文件目录 |
-| `-m, --model <model>` | 模型 ID |
-| `-k, --api-key <key>` | API Key |
-| `-b, --api-base-url <url>` | API Base URL |
-| `-q, --quiet` | 静默：转发给 **`promptpile -q`**；本进程 **不**将子进程 stdout/stderr 实时打到终端（子进程内部仍遵守 `promptpile` 静默规则） |
-| `--tools-file <path>` | 仅从该路径加载 tools（`.jsonl` 或 `.toml`）；相对路径相对当前工作目录 |
-| `--after-hook-path <path>` | 成功后执行的脚本；相对路径相对当前工作目录 |
+| `--config <path>` | 读取 `[[llm_api]]`、`[promptpile-react]`；共享键可回退 `[promptpile]`（见上文合并顺序） |
+| `-d, --directory <path>` | 消息扫描目录（覆盖 TOML/env） |
+| `-m, --model` / `-k, --api-key` / `-b, --api-base-url` | 覆盖**所有阶段** LLM（当次 CLI 最高优先级） |
+| `--temperature <n>` | 覆盖**所有阶段**采样温度（`0`–`2`）；子进程传 `--temperature`；未设时默认 **0.8** |
+| `-q, --quiet` | 子进程带 `-q`；本进程不转发子进程 stdout/stderr |
+| `--tools-file <path>` | Thought 阶段 tools（CLI 路径相对 **cwd**，覆盖 TOML/env） |
+| `--after-hook-path <path>` | **仅 Thought** 阶段；CLI 相对 cwd |
+| `-i, --input` | 本进程写 user 消息，不传 `promptpile -i` |
+| `-c, --continue` | 各阶段子进程 argv 含 `-c`；与 `-i` 同时可外层循环读终端 |
+| `--max-step <n>` | 仅本包；未设则入口只跑 **1** 轮 `nextStep` |
 
-未出现在命令行中的项不会加入转发 argv；`promptpile` 仍可使用环境变量及其自身默认值。
-
-### 由本包保留、不转发给 `promptpile` 的参数
-
-| 选项 | 说明 |
-|------|------|
-| `-i, --input` | 在终端读入并写成下一条 `user` 消息（见上文「`-i` / `-c`」）；**由本包调用 `promptpile` 的 file-handler**，不会作为 `promptpile -i` 传给子进程 |
-| `-c, --continue` | **与子进程**：为真时在 **`reactThoughtProcess()`** / **`reactObserveProcess()`** / **`reactFinalAnswerProcess()`** 的子进程 argv 末尾追加 `-c`。**与 `-i` 同时**：另启用外层「读完一轮 ReAct 后再读终端」的循环（见上文表）。主 argv **`buildForwardedPromptpileArgs()`** 仍 **不含** `-c`。 |
-| `--max-step <n>` | 主循环最多 **n** 轮成功的 **`nextStep`**（每轮 thought + observe 均成功计 1）；仅本包使用，**不**传给 `promptpile`。未传时入口**只跑一轮** `nextStep`（见上文「运行时」） |
-
-### 本包暂不提供的 `promptpile` 选项
-
-例如 `-f` / `--format` 等：**不在本 CLI 中声明**，也不参与主 argv 转发；**`-o`** 由 **`reactObserveProcess()`** 内部临时使用，主 CLI 不转发。
-
-**`--tool-choice`**：主 CLI **不声明、不转发**。
-
-**`--disable-tool`**：主 CLI **不声明、不转发**；**仅**在 **`reactFinalAnswerProcess()`** 的子进程 argv **末尾固定追加**（并先去掉拷贝中孤立的重复 **`--disable-tool`**），见 [promptpile 文档](../promptpile/README.md)。
+**本包不声明、子进程不由用户 `[promptpile]` 配置的项**：`-f` / `--format`、`-o`（主 CLI）、`--tool-choice`、`--insert-files` / `--append-files`（由本包按阶段写入临时 sidecar）。Final 阶段由代码固定 `--disable-tool`；Observe 使用临时 `-o`。
 
 ## 开发
 
 ```bash
-npm run dev -- -d ./messages -q
+npm run test
+npm run dev -- --config=example.toml -q
 ```
 
 ## 许可证

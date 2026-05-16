@@ -1,22 +1,17 @@
 #!/usr/bin/env node
-import {
-  buildForwardedPromptpileArgs,
-  getPromptpileReactOptions,
-  parseCli,
-  type PromptpileReactOptions
-} from './cli';
+import { parseCli } from './cli';
 import { appendUserFromTerminal } from './append-user-message';
-import { loadReactPrompts, type ReactPromptTexts } from './load-react-prompts';
 import { readUserInputFromTerminal } from './read-user-input';
 import { reactDebugLog } from './react-debug-log';
 import { PromptpileReactRuntime } from './react-runtime';
+import { resolveReactConfig } from './resolve-react-config';
+import type { ResolvedReactConfig } from './types';
 
 async function runOneReactSession(runtime: PromptpileReactRuntime): Promise<void> {
   reactDebugLog(
     'session start maxStep=',
     Number.isFinite(runtime.maxStep) ? String(runtime.maxStep) : 'Infinity'
   );
-  // 未传 --max-step 时为 Infinity：避免 `while (running)` 无限循环，只执行一轮 nextStep。
   if (Number.isFinite(runtime.maxStep)) {
     while (runtime.stopReason === 'running') {
       await runtime.nextStep();
@@ -31,33 +26,19 @@ async function runOneReactSession(runtime: PromptpileReactRuntime): Promise<void
 
 async function main(): Promise<void> {
   parseCli();
-  const options = getPromptpileReactOptions();
-  const forwarded = buildForwardedPromptpileArgs(options);
-  const prompts = loadReactPrompts(options.directory);
+  const config = resolveReactConfig(process.cwd(), process.argv);
 
-  if (options.inputMode) {
-    await runInputMode(options, forwarded, prompts);
+  if (config.inputMode) {
+    await runInputMode(config);
     return;
   }
 
-  const runtime = new PromptpileReactRuntime(options, forwarded, prompts);
+  const runtime = new PromptpileReactRuntime(config);
   await runOneReactSession(runtime);
   process.exitCode = runtime.stopReason === 'error' ? 1 : 0;
 }
 
-async function runInputMode(
-  options: PromptpileReactOptions,
-  forwarded: string[],
-  prompts: ReactPromptTexts
-): Promise<void> {
-  if (!options.directory) {
-    console.error('Error: -i requires -d / --directory');
-    process.exitCode = 1;
-    return;
-  }
-
-  const dir = options.directory;
-
+async function runInputMode(config: ResolvedReactConfig): Promise<void> {
   const processRound = async (): Promise<boolean> => {
     const userContent = await readUserInputFromTerminal();
     if (!userContent) {
@@ -67,7 +48,7 @@ async function runInputMode(
     }
 
     try {
-      appendUserFromTerminal(dir, userContent);
+      appendUserFromTerminal(config.directoryAbs, userContent);
       reactDebugLog('inputRound userAppended');
     } catch (e) {
       console.error('Error:', e instanceof Error ? e.message : e);
@@ -75,7 +56,7 @@ async function runInputMode(
       return false;
     }
 
-    const runtime = new PromptpileReactRuntime(options, forwarded, prompts);
+    const runtime = new PromptpileReactRuntime(config);
     await runOneReactSession(runtime);
 
     if (runtime.stopReason === 'error') {
@@ -87,7 +68,7 @@ async function runInputMode(
     return true;
   };
 
-  if (!options.continueMode) {
+  if (!config.continueMode) {
     await processRound();
     return;
   }

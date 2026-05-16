@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { parseTemperatureInput } from './llm-sampling';
 import { Config } from './types';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
@@ -19,14 +20,22 @@ const buildProgram = (): Command => {
     .option('-m, --model <model>', 'AI model to use')
     .option('-k, --api-key <key>', 'AI API key')
     .option('-b, --api-base-url <url>', 'AI API base URL')
+    .option(
+      '--temperature <n>',
+      'Sampling temperature (0–2); overrides llm_api_temperature / [[llm_api]] profile (default 0.8 if unset)'
+    )
     .option('-o, --output <path>', 'Output file path for AI response')
     .option('-q, --quiet', 'Disable normal stdout logs and response output')
     .option('-f, --format <format>', 'Output format (text or json)')
     .option('-i, --input', 'Read user input from terminal and append as next user message')
     .option('-c, --continue', 'Append assistant reply to next message file')
     .option(
-      '--system-inject-file <path>',
-      'Prepend or merge into first system message from this UTF-8 file (relative paths resolve from cwd)'
+      '--insert-files <paths>',
+      'Prepend messages from sidecar files before scanned messages; paths separated by |; each file must be {name}.{role}.md (relative to cwd)'
+    )
+    .option(
+      '--append-files <paths>',
+      'Append messages from sidecar files after scanned messages; paths separated by |; each file must be {name}.{role}.md (relative to cwd)'
     )
     .option(
       '--tools-file <path>',
@@ -42,7 +51,7 @@ const buildProgram = (): Command => {
     )
     .option(
       '--disable-tool',
-      'Do not load or send tools: skip --tools-file / TOOLS_FILE and omit built-in Glob/Grep pack'
+      'Do not load or send tools: skip --tools-file / TOOLS_FILE'
     )
   return program;
 };
@@ -64,7 +73,9 @@ export const parseCli = (argv: string[]): CliParseResult => {
     toolsFile?: string;
     afterHookPath?: string;
     toolChoice?: string;
-    systemInjectFile?: string;
+    insertFiles?: string;
+    appendFiles?: string;
+    temperature?: string;
     disableTool?: boolean;
   };
 
@@ -87,11 +98,21 @@ export const parseCli = (argv: string[]): CliParseResult => {
     typeof rawToolChoice === 'string' && rawToolChoice.trim() !== ''
       ? rawToolChoice.trim()
       : undefined;
-  const rawSystemInject = options.systemInjectFile as string | undefined;
-  const systemInjectFileCli =
-    typeof rawSystemInject === 'string' && rawSystemInject.trim() !== ''
-      ? rawSystemInject.trim()
+  const rawInsertFiles = options.insertFiles as string | undefined;
+  const insertFilesCli =
+    typeof rawInsertFiles === 'string' && rawInsertFiles.trim() !== ''
+      ? rawInsertFiles.trim()
       : undefined;
+  const rawAppendFiles = options.appendFiles as string | undefined;
+  const appendFilesCli =
+    typeof rawAppendFiles === 'string' && rawAppendFiles.trim() !== ''
+      ? rawAppendFiles.trim()
+      : undefined;
+  const rawTemperature = options.temperature as string | undefined;
+  let temperature: number | undefined;
+  if (typeof rawTemperature === 'string' && rawTemperature.trim() !== '') {
+    temperature = parseTemperatureInput(rawTemperature.trim());
+  }
 
   return {
     configPath,
@@ -106,9 +127,11 @@ export const parseCli = (argv: string[]): CliParseResult => {
       continueMode: options.continue === true ? true : undefined,
       inputMode: options.input === true ? true : undefined,
       toolsFileCli,
-      systemInjectFileCli,
+      insertFilesCli,
+      appendFilesCli,
       afterHookCli,
       toolChoice: toolChoiceCli,
+      temperature,
       disableTool: options.disableTool === true ? true : undefined
     }
   };

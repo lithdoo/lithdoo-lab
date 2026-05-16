@@ -50,8 +50,9 @@
    - `^\[(\d+)\](.+?)\.(md|json)$`（扩展名不区分大小写）；
    - `^\[(\d+)\]assistant\.call\.jsonl$`、`^\[(\d+)\]assistant\.result\.jsonl$`。
 6. 按序号 **升序** 组装 `messages`：先将扫描到的所有文件按 **序号分组**（同一序号、不同子目录下的文件会进入 **同一组**），再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)）。
-7. 若指定 **`--system-inject-file`**：从该路径读取 **UTF-8** 文本（**相对路径相对当前工作目录**，与 `--tools-file` 一致）；去除 BOM；若扩展名为 **`.md`**（不区分大小写）再按消息文件规则去除 **YAML front matter**。读入后若全文 **仅空白** 则 **不修改** `messages`；否则若 **首条消息** 的 `role` 已是 `system`，则将注入正文放在前面并以空行与原有 `content` 拼接；否则在 **`messages` 最前** 插入一条 `{ role: "system", content: ... }`。文件不存在或不可读则 **退出并报错**。
-8. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
+7. 若指定 **`insert_files` / `append_files`**（CLI：`--insert-files`、`--append-files`；TOML / 环境变量见下表）：从各路径读取 **UTF-8** sidecar 文件（**相对路径相对当前工作目录**，与 `--tools-file` 一致）。多个路径用 **`|`** 分隔。每个文件的 **basename** 必须为 **`{name}.{role}.md`**（`name` 可含点，如 `react.core.system.md` → `role=system`）；`role` 仅允许 `system`、`user`、`assistant`。去除 BOM；`.md` 去 YAML front matter；trim 后 **仅空白** 则跳过该条。`insert_files` 按列表顺序 **插在** 扫描目录组装的 `messages` **之前**；`append_files` **追加在之后**。每条 sidecar 对应 **独立** 一条 API 消息（不与 `[idx]system.md` 合并）。文件不存在、不可读或命名非法则 **退出并报错**。sidecar 文件 **不会** 被 `scanDirectory` 当作 `[idx]role.md` 扫描。
+8. 合并 **`temperature`**（与 `llm_api_model` 同链：`llm_api_temperature` / `PROMPTPILE_LLM_API_TEMPERATURE` / `--temperature` / `[[llm_api]].temperature`）；各层均未设置时 **默认 `0.8`**，并写入请求体。
+9. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
 
 普通消息的 **角色名** 会原样作为 `role` 传给 API。除 `tool` 外请使用网关接受的 role（常见为 `system`、`user`、`assistant`）。`tool` 消息来自 `[idx]assistant.result.jsonl` 的各行；若存在 **`[idx]assistant.calls.jsonl`** 但某 `tool_call_id` 在 result 中无对应行（或缺少 result 文件），程序会 **合成** 一条 `tool` 消息，其 `content` 为固定中文错误句（见下节 **「`[idx]assistant.result.jsonl`」** 中「与 continue 侧 call 文件对齐」说明）。
 
@@ -175,7 +176,7 @@ npm start -- --help
 
 未使用 **`--disable-tool`** 且 **未**提供上述任一显式路径时，程序在调用 API **之前**报错退出。
 
-**`--disable-tool`**：不加载显式工具文件，**不**合并内置 Glob/Grep（`mergeSearchToolsPack`）；请求体中 **不传** `tools`。与 **`--tools-file`** 同时出现时以 **`--disable-tool` 为准**（不解析工具路径）。历史消息中的 `tool_calls` / `tool` 仍按文件照常拼入 `messages`。
+**`--disable-tool`**：不加载工具文件；请求体中 **不传** `tools`。与 **`--tools-file`** 同时出现时以 **`--disable-tool` 为准**（不解析工具路径）。历史消息中的 `tool_calls` / `tool` 仍按文件照常拼入 `messages`。
 
 显式路径指向的文件 **必须存在** 且扩展名为 **`.toml`**。
 
@@ -188,7 +189,7 @@ npm start -- --help
 - **深度**：进入下一层 `extends` 时深度 +1；**深度大于 32** 时报错退出。
 - **`tools` 键**：可省略或为空数组；可仅通过 `extends` 聚合工具。
 
-解析成功后，若未 `--disable-tool`，仍会执行 **`mergeSearchToolsPack`**：在文件 tools 结果上追加内置 Glob/Grep 定义（与已有 `function.name` 去重）。若入口 toml 与 `extends` 均未产生任何工具且内置包也为空，则请求体中可不传 `tools`。
+解析成功后，发给 API 的 `tools` **仅**来自上述 toml 合并结果（与 `function.name` 去重规则见 `extends` 一节）；未产生任何工具条目时，请求体中可不传 `tools`。
 
 ### 工具条目的扁平形状（`[[tools]]`）
 
@@ -297,6 +298,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 |------|------|-------------------------|
 | `DEFAULT_DIRECTORY` / `PROMPTPILE_DIR` | 扫描根目录 | `./messages` |
 | `AI_MODEL` | 模型名 | `gpt-3.5-turbo` |
+| `PROMPTPILE_LLM_API_TEMPERATURE` / `AI_TEMPERATURE` | 采样温度（`0`–`2`），等价 TOML `llm_api_temperature` | `0.8` |
 | `AI_API_KEY` | API 密钥 | 空（必填，否则退出） |
 | `AI_API_BASE_URL` | API 根地址 | `https://api.openai.com/v1` |
 | `OUTPUT_FILE` | 将模型回复写入文件路径 | 空（默认不写文件） |
@@ -304,10 +306,13 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `PROMPTPILE_FORMAT` | `text` 或 `json` | `text` |
 | `PROMPTPILE_CONTINUE` | 等价 `--continue` | 关闭 |
 | `PROMPTPILE_INPUT` | 等价 `--input` | 关闭 |
-| `PROMPTPILE_SYSTEM_INJECT_FILE` | 等价 `--system-inject-file` 路径 | 无 |
+| `PROMPTPILE_INSERT_FILES` | 等价 `--insert-files`（`\|` 分隔多路径） | 无 |
+| `PROMPTPILE_APPEND_FILES` | 等价 `--append-files`（`\|` 分隔多路径） | 无 |
 | `PROMPTPILE_DISABLE_TOOL` | 等价 `--disable-tool` | 关闭 |
 | `PROMPTPILE_LLM_API_KEY_ENV` | 从**另一环境变量名**解析 API Key（值为变量名） | 无 |
 | `PROMPTPILE_DEBUG` | 诊断输出（stderr） | 关闭 |
+| `PROMPTPILE_DUMP_LLM` | 每次 Chat Completions 请求在 **cwd** 写入 `{ts}-{rand}.req.json` / `.res.json`（请求体与归一化响应；`Authorization` 脱敏） | 关闭 |
+| `PROMPTPILE_DUMP_LLM_TAG` | 写入 dump JSON 的 `tag` 字段（如 `thought` / `observe` / `final`） | 无 |
 | `AFTER_HOOK_PATH` | 完成后执行的脚本路径；**相对路径相对扫描目录根** | 空（走 CLI 或默认文件名） |
 | `TOOLS_FILE` | **仅**从此路径加载工具 `.toml`（可含 `extends`）；**相对路径相对扫描目录根** | 空（须 `--tools-file` 或本变量或 `PROMPTPILE_TOOLS_FILE` 或 `--disable-tool`） |
 | `PROMPTPILE_TOOLS_FILE` | 与 `TOOLS_FILE` 相同语义（扫描目录根相对路径）；二者任填其一即可 | 空 |
@@ -315,8 +320,8 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 
 ### TOML（`--config`）
 
-- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`format`、`output`（路径字符串）、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`system_inject_file`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`。
-- **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`；由 `llm_api` 选择 profile 后再应用 `llm_api_*` 覆盖。
+- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`format`、`output`（路径字符串）、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`。
+- **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`；由 `llm_api` 选择 profile 后再应用 `llm_api_*` 覆盖。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。
 
 ### CLI 参数
@@ -328,16 +333,18 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `-m, --model <model>` | 模型 ID | 见上合并链 |
 | `-k, --api-key <key>` | API Key | 无 |
 | `-b, --api-base-url <url>` | Base URL | 见上合并链 |
+| `--temperature <n>` | 采样温度（`0`–`2`）；覆盖 `llm_api_temperature` / profile | `0.8` |
 | `-o, --output <path>` | 输出文件路径（保存模型回复） | 无 |
 | `-q, --quiet` | 静默模式：不打印过程日志、流式正文、工具调用行；**仍会**写入 `-o` 主文件与 `.calls.jsonl` | 关闭 |
 | `-f, --format <format>` | `text` 或 `json` | 未传则走下层合并，最终默认 `text` |
 | `-i, --input` | 在终端读取输入并保存为下一条 `user` 消息后再执行 | 关闭 |
 | `-c, --continue` | 将本次 assistant 输出追加为下一条消息文件：有正文则写 `[N]assistant.md`；含 `tool_calls` 则写 `[N]assistant.calls.jsonl`；两者**可共存**于同一 `N`，下一轮拼请求时会合并为一条 `{ role: 'assistant', content, tool_calls }`；都没有时不写文件 | 关闭 |
 | `--tools-file <path>` | 工具定义 **`.toml`**（可含 `extends`）；**相对路径相对当前工作目录**；未设置且未 `TOOLS_FILE` / `PROMPTPILE_TOOLS_FILE` 且未 `--disable-tool` 时报错 | 无 |
-| `--system-inject-file <path>` | 从该 UTF-8 文件注入 **system** 正文：与首条 `system` 合并或于最前插入；**相对路径相对当前工作目录**；仅空白则忽略；缺失则报错退出 | 无 |
+| `--insert-files <paths>` | 在扫描消息 **之前** 插入 sidecar 消息；多路径用 `\|` 分隔；每文件须 `{name}.{role}.md`；**相对路径相对 cwd** | 无 |
+| `--append-files <paths>` | 在扫描消息 **之后** 追加 sidecar 消息；规则同 `--insert-files` | 无 |
 | `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
 | `--tool-choice <value>` | OpenAI `tool_choice`：当且仅当本次请求包含非空 `tools` 时写入请求体。`none`（禁止工具调用）\|`auto`\|`required`\|`function:<name>`（强制指定工具）。**优先级**：CLI 高于下层 `TOOL_CHOICE`；均未设置时按 `auto` | 无（由下层或未设置时的 `auto` 决定） |
-| `--disable-tool` | 不加载、不发送 `tools`：忽略 `--tools-file` 与 `TOOLS_FILE`、不合并内置 Glob/Grep；与 `--tools-file` 同时出现时 **本开关优先** | 关闭 |
+| `--disable-tool` | 不加载、不发送 `tools`：忽略 `--tools-file` 与 `TOOLS_FILE`；与 `--tools-file` 同时出现时 **本开关优先** | 关闭 |
 
 与「不传 `tools`」的区别：`tool_choice` 仅在请求体带 `tools` 时发送；`none` 表示仍下发工具定义但禁止模型发起 `tool_calls`。自建网关若不支持 `required` 或强制 `function` 对象，可能返回 400，需以网关文档为准。
 
