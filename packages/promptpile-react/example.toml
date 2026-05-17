@@ -41,6 +41,7 @@
     llm_api_model= ''
     llm_api_base_url=''
     llm_api_temperature = 0.8
+    llm_api_extra_body = { top_p = 0.9 }
 
 [promptpile-react]
     # 以下参数单独读取，如果未配置则从 promptpile 采用的同名配置
@@ -68,6 +69,12 @@
     thought_llm_api_key_env = ''
     thought_llm_api_base_url=''
     thought_llm_api_temperature = 0.7
-
+    thought_llm_api_extra_body = { top_p = 0.85 }
+    observe_llm_api_extra_body = { }
+    check_prompt = './check.md'
+    check_llm_api = 'deepseek'
+    check_llm_api_temperature = 0.2
+    check_llm_api_extra_body = { }
+    final_llm_api_extra_body = { }
 
 

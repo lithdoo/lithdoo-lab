@@ -103,7 +103,8 @@ async function main(): Promise<void> {
       appendUserMessage(config.directory, files, userContent);
       files = scanDirectory(config.directory);
     }
-    if (files.length === 0) {
+    const hasInsertFiles = (config.insertFilesCli?.trim() ?? '') !== '';
+    if (files.length === 0 && !hasInsertFiles) {
       console.error(
         'Error: No files found matching message patterns ([idx]role.md/json, [idx]assistant.calls.jsonl, [idx]assistant.result.jsonl)'
       );
@@ -179,7 +180,8 @@ async function main(): Promise<void> {
         messages,
         tools,
         toolChoiceForApi,
-        config.temperature
+        config.temperature,
+        config.extraBody
       );
       response = result.content;
       toolCalls = result.toolCalls;
@@ -206,7 +208,8 @@ async function main(): Promise<void> {
           if (!quiet) {
             process.stdout.write(chunk);
           }
-        }
+        },
+        config.extraBody
       );
       response = result.content;
       toolCalls = result.toolCalls;

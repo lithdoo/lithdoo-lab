@@ -9,7 +9,7 @@ import {
   mapReactEnvRecord,
   mapSharedEnvRecord
 } from './env-react';
-import { pickBool, pickInt, pickNum, pickStr } from './merge-utils';
+import { pickBool, pickInt, pickNum, pickRecord, pickStr } from './merge-utils';
 import { parseReactCli } from './cli';
 import { applyCliLlmOverrides, resolveLlmProfile } from './resolve-llm-profile';
 import {
@@ -45,14 +45,25 @@ const mergePhaseLlm = (
     model?: string;
     baseUrl?: string;
     temperature?: number;
+    extraBody?: Record<string, unknown>;
   },
   cli: ReactCliOverrides,
-  shared: { pileTomlTemperature?: number; sharedEnvTemperature?: number }
+  shared: {
+    pileTomlTemperature?: number;
+    sharedEnvTemperature?: number;
+    pileTomlExtraBody?: Record<string, unknown>;
+    sharedEnvExtraBody?: Record<string, unknown>;
+  }
 ): PhaseLlmConfig => {
   const temperatureOverride = pickNum(
     phase.temperature,
     shared.pileTomlTemperature,
     shared.sharedEnvTemperature
+  );
+  const extraBodyOverride = pickRecord(
+    phase.extraBody,
+    shared.pileTomlExtraBody,
+    shared.sharedEnvExtraBody
   );
   const base = resolveLlmProfile(llmApis, {
     profileName: phase.profileName ?? defaultProfile,
@@ -60,7 +71,8 @@ const mergePhaseLlm = (
     apiKey: phase.key,
     apiKeyEnv: phase.keyEnv,
     apiBaseUrl: phase.baseUrl,
-    temperature: temperatureOverride
+    temperature: temperatureOverride,
+    extraBody: extraBodyOverride
   });
   return applyCliLlmOverrides(base, cli);
 };
@@ -113,7 +125,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     procShared = mapProcessEnvShared();
     procReact = mapProcessEnvReact();
   } catch (e) {
-    console.error('Error: Invalid temperature in env:', e instanceof Error ? e.message : e);
+    console.error('Error: Invalid config in env:', e instanceof Error ? e.message : e);
     process.exit(1);
   }
 
@@ -130,7 +142,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     scanShared = mapSharedEnvRecord(scanEnvMap);
     scanReact = mapReactEnvRecord(scanEnvMap);
   } catch (e) {
-    console.error('Error: Invalid temperature in env:', e instanceof Error ? e.message : e);
+    console.error('Error: Invalid config in env:', e instanceof Error ? e.message : e);
     process.exit(1);
   }
 
@@ -253,6 +265,15 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     )
   };
 
+  const sharedExtraBody = {
+    pileTomlExtraBody: sharedTomlPile.llmApiExtraBody ?? sharedTomlReact.llmApiExtraBody,
+    sharedEnvExtraBody: pickRecord(
+      scanShared.extraBody,
+      cwdShared.extraBody,
+      procShared.extraBody
+    )
+  };
+
   const thought = mergePhaseLlm(
     llmApis,
     defaultProfile,
@@ -267,10 +288,16 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
         scanReact.thoughtLlmApiTemperature,
         cwdReact.thoughtLlmApiTemperature,
         procReact.thoughtLlmApiTemperature
+      ),
+      extraBody: pickRecord(
+        reactToml.thoughtLlmApiExtraBody,
+        scanReact.thoughtLlmApiExtraBody,
+        cwdReact.thoughtLlmApiExtraBody,
+        procReact.thoughtLlmApiExtraBody
       )
     },
     cli,
-    sharedTemperature
+    { ...sharedTemperature, ...sharedExtraBody }
   );
   const observe = mergePhaseLlm(
     llmApis,
@@ -286,10 +313,41 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
         scanReact.observeLlmApiTemperature,
         cwdReact.observeLlmApiTemperature,
         procReact.observeLlmApiTemperature
+      ),
+      extraBody: pickRecord(
+        reactToml.observeLlmApiExtraBody,
+        scanReact.observeLlmApiExtraBody,
+        cwdReact.observeLlmApiExtraBody,
+        procReact.observeLlmApiExtraBody
       )
     },
     cli,
-    sharedTemperature
+    { ...sharedTemperature, ...sharedExtraBody }
+  );
+  const check = mergePhaseLlm(
+    llmApis,
+    defaultProfile,
+    {
+      profileName: reactToml.checkLlmApi,
+      key: reactToml.checkLlmApiKey,
+      keyEnv: reactToml.checkLlmApiKeyEnv,
+      model: reactToml.checkLlmApiModel,
+      baseUrl: reactToml.checkLlmApiBaseUrl,
+      temperature: pickNum(
+        reactToml.checkLlmApiTemperature,
+        scanReact.checkLlmApiTemperature,
+        cwdReact.checkLlmApiTemperature,
+        procReact.checkLlmApiTemperature
+      ),
+      extraBody: pickRecord(
+        reactToml.checkLlmApiExtraBody,
+        scanReact.checkLlmApiExtraBody,
+        cwdReact.checkLlmApiExtraBody,
+        procReact.checkLlmApiExtraBody
+      )
+    },
+    cli,
+    { ...sharedTemperature, ...sharedExtraBody }
   );
   const finalPhase = mergePhaseLlm(
     llmApis,
@@ -305,10 +363,16 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
         scanReact.finalLlmApiTemperature,
         cwdReact.finalLlmApiTemperature,
         procReact.finalLlmApiTemperature
+      ),
+      extraBody: pickRecord(
+        reactToml.finalLlmApiExtraBody,
+        scanReact.finalLlmApiExtraBody,
+        cwdReact.finalLlmApiExtraBody,
+        procReact.finalLlmApiExtraBody
       )
     },
     cli,
-    sharedTemperature
+    { ...sharedTemperature, ...sharedExtraBody }
   );
 
   const promptPaths = {
@@ -323,6 +387,12 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
       scanReact.observePrompt,
       cwdReact.observePrompt,
       procReact.observePrompt
+    ),
+    check: pickStr(
+      reactToml.checkPrompt,
+      scanReact.checkPrompt,
+      cwdReact.checkPrompt,
+      procReact.checkPrompt
     ),
     final: pickStr(
       reactToml.finalPrompt,
@@ -344,7 +414,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     maxStep,
     toolsFileForCli,
     afterHookForCli,
-    phases: { thought, observe, final: finalPhase },
+    phases: { thought, observe, check, final: finalPhase },
     prompts
   };
 };

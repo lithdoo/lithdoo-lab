@@ -6,13 +6,13 @@
 #   --max-step=10 \
 #   --quiet
 #
-# （也可单独覆盖：--directory=./message --model=chat --temperature=0.7 --tools-file=./.tools.toml）
+# （也可单独覆盖：--directory=./message --model=chat --temperature=0.7 --extra-body='{"top_p":0.9}' --tools-file=./.tools.toml）
 # （quiet=false 不传 --quiet；input/continue 为 true 时追加 --input / --continue）
 #
 # 含义：
 # --config=example.toml — 父进程读取 [[llm_api]]、[promptpile-react]；[promptpile] 仅作共享键回退
 # --max-step=10 — [promptpile-react].max_step（CLI 优先于 TOML/env）
-# 子进程不传 --config；各阶段由 buildPhaseArgv 显式拼 -d/-m/-k/-b 等
+# 子进程不传 --config；各阶段由 buildPhaseArgv 显式拼 -d/-m/-k/-b 等（thought→observe 文本→check 决策→final）
 #
 # [promptpile] 中的 format / output / tool_choice / insert_files 仅供裸跑 promptpile，react 模式忽略
 #

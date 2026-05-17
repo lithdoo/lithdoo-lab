@@ -31,6 +31,7 @@
 # --append-files=./tail.user.md — append_files（可选）；规则同上，消息追加在扫描目录消息之后。
 # --model= — llm_api_model，可与 toml 中 llm_api 所选 profile 合并。
 # --temperature=0.7 — llm_api_temperature，覆盖 TOML/profile；未设置时默认 0.8。
+# --extra-body='{"top_p":0.9}' — llm_api_extra_body，JSON 字符串，合并进请求体；未设置则不传。
 # --api-key= — llm_api_key。
 # --api-base-url= — llm_api_base_url。
 # （llm_api 选用哪档 profile、llm_api_key_env 从其它环境变量名取密钥：无单独 CLI 时由 --config 读 TOML 或见 example.env 中 PROMPTPILE_LLM_*）

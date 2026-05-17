@@ -1,7 +1,7 @@
 [[llm_api]]
 name = "deepseek"
 model = "deepseek-chat"
-base_url = "https://api.deepseek.com/v1"
+base_url = "https://api.deepseek.com/"
 api_key_env = "DEEPSEEK_API_KEY"
 
 [promptpile-react]
@@ -17,4 +17,9 @@ quiet = false
 thought_prompt = "../.react.core.md"
 observe_prompt = "../.react.observe.md"
 observe_llm_api_temperature = 0.2
+observe_llm_api_extra_body = { }
+check_prompt = "../.react.check.md"
+check_llm_api = "deepseek"
+check_llm_api_temperature = 0.2
+check_llm_api_extra_body = { }
 final_prompt = "../.react.final.md"

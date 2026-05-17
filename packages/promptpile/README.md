@@ -52,7 +52,8 @@
 6. 按序号 **升序** 组装 `messages`：先将扫描到的所有文件按 **序号分组**（同一序号、不同子目录下的文件会进入 **同一组**），再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)）。
 7. 若指定 **`insert_files` / `append_files`**（CLI：`--insert-files`、`--append-files`；TOML / 环境变量见下表）：从各路径读取 **UTF-8** sidecar 文件（**相对路径相对当前工作目录**，与 `--tools-file` 一致）。多个路径用 **`|`** 分隔。每个文件的 **basename** 必须为 **`{name}.{role}.md`**（`name` 可含点，如 `react.core.system.md` → `role=system`）；`role` 仅允许 `system`、`user`、`assistant`。去除 BOM；`.md` 去 YAML front matter；trim 后 **仅空白** 则跳过该条。`insert_files` 按列表顺序 **插在** 扫描目录组装的 `messages` **之前**；`append_files` **追加在之后**。每条 sidecar 对应 **独立** 一条 API 消息（不与 `[idx]system.md` 合并）。文件不存在、不可读或命名非法则 **退出并报错**。sidecar 文件 **不会** 被 `scanDirectory` 当作 `[idx]role.md` 扫描。
 8. 合并 **`temperature`**（与 `llm_api_model` 同链：`llm_api_temperature` / `PROMPTPILE_LLM_API_TEMPERATURE` / `--temperature` / `[[llm_api]].temperature`）；各层均未设置时 **默认 `0.8`**，并写入请求体。
-9. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
+9. 合并可选 **`extra_body`**（同链：`llm_api_extra_body` / `PROMPTPILE_LLM_API_EXTRA_BODY` / `--extra-body` / `[[llm_api]].extra_body`）；TOML 为内联表，env/CLI 为 JSON 对象字符串；各层均未设置时不写入；合并后浅展开进请求体（可覆盖 `temperature` 等字段）。
+10. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`。`text` 模式使用 **`stream: true`**，正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；`json` 模式使用 **`stream: false`**，读取 **`choices[0].message.content`** 与 **`message.tool_calls`**。
 
 普通消息的 **角色名** 会原样作为 `role` 传给 API。除 `tool` 外请使用网关接受的 role（常见为 `system`、`user`、`assistant`）。`tool` 消息来自 `[idx]assistant.result.jsonl` 的各行；若存在 **`[idx]assistant.calls.jsonl`** 但某 `tool_call_id` 在 result 中无对应行（或缺少 result 文件），程序会 **合成** 一条 `tool` 消息，其 `content` 为固定中文错误句（见下节 **「`[idx]assistant.result.jsonl`」** 中「与 continue 侧 call 文件对齐」说明）。
 
@@ -299,6 +300,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `DEFAULT_DIRECTORY` / `PROMPTPILE_DIR` | 扫描根目录 | `./messages` |
 | `AI_MODEL` | 模型名 | `gpt-3.5-turbo` |
 | `PROMPTPILE_LLM_API_TEMPERATURE` / `AI_TEMPERATURE` | 采样温度（`0`–`2`），等价 TOML `llm_api_temperature` | `0.8` |
+| `PROMPTPILE_LLM_API_EXTRA_BODY` | 额外请求体字段（JSON 对象字符串），等价 TOML `llm_api_extra_body` | 无 |
 | `AI_API_KEY` | API 密钥 | 空（必填，否则退出） |
 | `AI_API_BASE_URL` | API 根地址 | `https://api.openai.com/v1` |
 | `OUTPUT_FILE` | 将模型回复写入文件路径 | 空（默认不写文件） |
@@ -320,8 +322,8 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 
 ### TOML（`--config`）
 
-- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`format`、`output`（路径字符串）、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`。
-- **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`；由 `llm_api` 选择 profile 后再应用 `llm_api_*` 覆盖。
+- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`format`、`output`（路径字符串）、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。
+- **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `llm_api` 选择 profile 后再应用 `llm_api_*` 覆盖。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。
 
 ### CLI 参数
@@ -334,6 +336,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `-k, --api-key <key>` | API Key | 无 |
 | `-b, --api-base-url <url>` | Base URL | 见上合并链 |
 | `--temperature <n>` | 采样温度（`0`–`2`）；覆盖 `llm_api_temperature` / profile | `0.8` |
+| `--extra-body <json>` | 额外请求体字段（JSON 对象）；覆盖 `llm_api_extra_body` / profile | 无 |
 | `-o, --output <path>` | 输出文件路径（保存模型回复） | 无 |
 | `-q, --quiet` | 静默模式：不打印过程日志、流式正文、工具调用行；**仍会**写入 `-o` 主文件与 `.calls.jsonl` | 关闭 |
 | `-f, --format <format>` | `text` 或 `json` | 未传则走下层合并，最终默认 `text` |

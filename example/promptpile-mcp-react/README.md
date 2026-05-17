@@ -2,7 +2,20 @@
 
 本示例提供 **`run-example.bat`**：自动探活或启动 MCP 网关、在 **`messages/`** 下准备会话与 **`messages\.tools.toml`**，再以 **`promptpile-react --config promptpile-react.toml`** 运行（终端多轮输入）。默认 LLM 为 **DeepSeek**（在 TOML 的 `[[llm_api]]` 中配置）。
 
-根目录下的 **`.react.*.md`** 为 ReAct 提示词；由 TOML 的 `thought_prompt` / `observe_prompt` / `final_prompt` 引用（相对 `messages/` 的 `..`），**不复制**到 `messages/`。
+根目录下的 **`.react.*.md`** 为 ReAct 提示词；由 TOML 的 `thought_prompt` / `observe_prompt` / `check_prompt` / `final_prompt` 引用（相对 `messages/` 的 `..`），**不复制**到 `messages/`。
+
+## ReAct 流程（每轮）
+
+```text
+Thought（MCP tools + after-hook exec-calls）
+  → Observe（全量 messages，纯文本观察报告，不写回目录）
+  → Check（仅读观察报告 + react_check_decision，决定是否继续）
+  →（继续则下一轮 Thought，否则 Final）
+```
+
+- **Observe** 子进程 **`--disable-tool`**，不调用 `react_observe_decision`（已废弃）。
+- **Check** 子进程使用空扫描目录 + **`--insert-files`**（check 提示 + 观察报告正文），强制 **`react_check_decision`**。
+- 自定义 observe 提示若仍要求 `react_observe_decision` **无效**；决策逻辑须写在 **`.react.check.md`**。
 
 ## 前置条件
 
@@ -23,7 +36,16 @@
 | 区域 | 说明 |
 |------|------|
 | **`[[llm_api]]`** | 模型、`base_url`；密钥通过 **`api_key_env`** 从环境变量读取，勿写入仓库 |
-| **`[promptpile-react]`** | `dir`、`tools_file`、`after_hook`、`max_step`、`input` / `continue`、提示词路径等 |
+| **`[promptpile-react]`** | `dir`、`tools_file`、`after_hook`、`max_step`、`input` / `continue`、各阶段提示词与 `*_llm_api_*` 等 |
+
+| 提示词文件 | 阶段 | TOML 键 |
+|----------|------|---------|
+| `.react.core.md` | Thought | `thought_prompt` |
+| `.react.observe.md` | Observe（纯文本报告） | `observe_prompt` |
+| `.react.check.md` | Check（`react_check_decision`） | `check_prompt` |
+| `.react.final.md` | Final | `final_prompt` |
+
+`observe_llm_api_temperature` / `check_llm_api_temperature` 等可分别为 Observe、Check 指定 LLM profile 覆盖（未设时回退 `llm_api` 默认链）。
 
 运行前设置系统环境变量 **`DEEPSEEK_API_KEY`**。若使用 **`setx`**，须**新开终端**后变量才会出现在会话里。
 
@@ -33,9 +55,13 @@
 
 TOML 中 **`after_hook = "../after-hook-mcp-exec-calls.bat"`**（相对扫描目录 `messages/`）。**`run-example.bat`** 在启动 react 前设置 **`PROMPTPILE_MCP_BASE_URL`**，供 hook 调用网关。
 
-- **触发时机**：仅在 **Thought** 阶段的 **`promptpile`** 成功结束后（**Observe** 与 **Final** 阶段会剥离 after-hook，见 **`packages/promptpile-react`**）。
+- **触发时机**：仅在 **Thought** 阶段的 **`promptpile`** 成功结束后（**Observe**、**Check** 与 **Final** 不带 after-hook，见 **`packages/promptpile-react`**）。
 - **行为**：若 **`PROMPTPILE_HAS_TOOL_CALLS=1`**（由 **`promptpile`** 注入），则调用 **`promptpile-mcp exec-calls`**，将 **`messages/`** 下 **`*.calls.jsonl`** 转为 **`*.result.jsonl`**。
 - **网关**：**`launch`** 须保持运行；否则 **`exec-calls`** 会失败。
+
+## 调试
+
+设置 **`PROMPTPILE_REACT_DEBUG=1`** 可在 stderr 看到 **`phase=observe`**、**`phase=check continue=true|false`** 等。子进程 LLM dump 的 **`tag`** 可为 `thought` / `observe` / `check` / `final`（见 **`packages/promptpile-react/README.md`**）。
 
 ## 运行
 
@@ -43,6 +69,12 @@ TOML 中 **`after_hook = "../after-hook-mcp-exec-calls.bat"`**（相对扫描目
 2. 若 **`http://127.0.0.1:8765/health`** 不可用，脚本会 **另开窗口** 启动 [`promptpile-mcp-launcher`](../promptpile-mcp-launcher/)，并轮询直至就绪（约最长 62 秒）。
 3. 脚本生成 **`messages\.tools.toml`**（依赖已运行的网关），然后启动 **`promptpile-react --config promptpile-react.toml`**。
 4. 按提示输入用户消息；每轮结束后 **Ctrl+Z** 再 **Enter**（Windows）提交输入（与 **stdin** 约定一致）。
+
+### 验证建议
+
+1. 问「某目录里有哪些文件」类问题：Thought 产生 MCP calls → after-hook **`exec-calls`**。
+2. Observe 报告应在 **缺失** 中写明未 list 目录（若仅 allowed dirs）。
+3. Check 应对缺口返回 **`decision: true`**，继续下一轮；目标满足后 **`decision: false`** → Final。
 
 模型若产生 MCP **`tool_calls`**，**Thought** 结束后 **after-hook** 会尝试 **`exec-calls`**。仍可在网关运行时 **手动重试**：
 

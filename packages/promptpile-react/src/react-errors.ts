@@ -1,6 +1,6 @@
-export type PromptpileReactPhase = 'thought' | 'observe';
+export type PromptpileReactPhase = 'thought' | 'observe' | 'check';
 
-/** `reactThoughtProcess` / `reactObserveProcess` 在子进程或不可恢复读盘失败时抛出；`nextStep` 捕获并写 `stopReason = 'error'`。 */
+/** thought / observe / check 子进程或不可恢复读盘失败时抛出；`nextStep` 捕获并写 `stopReason = 'error'`。 */
 export class PromptpileReactInvocationError extends Error {
   readonly phase: PromptpileReactPhase;
 

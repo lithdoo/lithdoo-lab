@@ -1,5 +1,6 @@
 import fs from 'fs';
 import toml from '@iarna/toml';
+import { coerceExtraBodyValue, type ExtraBody } from './llm-extra-body';
 import { coerceTemperatureValue } from './llm-sampling';
 
 export interface LlmApiProfile {
@@ -9,6 +10,7 @@ export interface LlmApiProfile {
   api_key?: string;
   api_key_env?: string;
   temperature?: number;
+  extra_body?: ExtraBody;
 }
 
 export interface ParsedTomlConfig {
@@ -36,13 +38,16 @@ export const loadTomlConfigFile = (absPath: string): ParsedTomlConfig => {
       }
       const profTemp =
         row.temperature !== undefined ? coerceTemperatureValue(row.temperature) : undefined;
+      const profExtraBody =
+        row.extra_body !== undefined ? coerceExtraBodyValue(row.extra_body) : undefined;
       llmApis.push({
         name: name.trim(),
         model: typeof row.model === 'string' ? row.model : undefined,
         base_url: typeof row.base_url === 'string' ? row.base_url : undefined,
         api_key: typeof row.api_key === 'string' ? row.api_key : undefined,
         api_key_env: typeof row.api_key_env === 'string' ? row.api_key_env : undefined,
-        temperature: profTemp
+        temperature: profTemp,
+        extra_body: profExtraBody
       });
     }
   }

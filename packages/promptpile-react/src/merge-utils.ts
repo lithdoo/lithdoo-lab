@@ -1,4 +1,5 @@
 import { parseBoolEnv } from 'promptpile/dist/config';
+import { coerceExtraBodyValue, type ExtraBody } from 'promptpile/dist/llm-extra-body';
 import { coerceTemperatureValue } from 'promptpile/dist/llm-sampling';
 
 export const trim = (v: string | undefined): string | undefined => {
@@ -37,6 +38,14 @@ export const getNum = (r: Record<string, unknown>, key: string): number | undefi
     return undefined;
   }
   return coerceTemperatureValue(v);
+};
+
+export const getExtraBody = (r: Record<string, unknown>, key: string): ExtraBody | undefined => {
+  const v = r[key];
+  if (v === undefined) {
+    return undefined;
+  }
+  return coerceExtraBodyValue(v);
 };
 
 export const getInt = (r: Record<string, unknown>, key: string): number | undefined => {
@@ -101,6 +110,17 @@ export const pickInt = (
 export const pickNum = (
   ...values: (number | undefined)[]
 ): number | undefined => {
+  for (const v of values) {
+    if (v !== undefined) {
+      return v;
+    }
+  }
+  return undefined;
+};
+
+export const pickRecord = (
+  ...values: (ExtraBody | undefined)[]
+): ExtraBody | undefined => {
   for (const v of values) {
     if (v !== undefined) {
       return v;

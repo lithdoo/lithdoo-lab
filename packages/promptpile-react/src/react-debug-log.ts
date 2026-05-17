@@ -21,7 +21,7 @@ const envTruthy = (name: string): boolean => {
 
 export const isPromptpileReactDebug = (): boolean => envTruthy('PROMPTPILE_REACT_DEBUG');
 
-export type ReactDumpPhase = 'thought' | 'observe' | 'final';
+export type ReactDumpPhase = 'thought' | 'observe' | 'check' | 'final';
 
 export const buildPromptpileChildEnv = (phase: ReactDumpPhase): NodeJS.ProcessEnv => {
   const env = { ...process.env };
@@ -40,8 +40,8 @@ export const reactDebugLog = (...parts: unknown[]): void => {
   console.error('[promptpile-react]', ...parts);
 };
 
-/** Observe 子进程结束后：从 `-o` 主文件与 `{basename}.calls.jsonl` 读取 LLM 回复与 tool_calls（仅 debug）。 */
-export const logObservePhaseLlmOutput = (outPath: string, callsPath: string): void => {
+/** Observe 子进程结束后：从 `-o` 主文件读取纯文本回复（仅 debug）。 */
+export const logObservePhaseLlmOutput = (outPath: string): void => {
   if (!isPromptpileReactDebug()) {
     return;
   }
@@ -58,6 +58,26 @@ export const logObservePhaseLlmOutput = (outPath: string, callsPath: string): vo
     reply = `(read error: ${e instanceof Error ? e.message : String(e)})`;
   }
   reactDebugLog('phase=observe llm_reply:\n', truncateForDebug(reply));
+};
+
+/** Check 子进程结束后：从 `-o` 主文件与 `{basename}.calls.jsonl` 读取（仅 debug）。 */
+export const logCheckPhaseLlmOutput = (outPath: string, callsPath: string): void => {
+  if (!isPromptpileReactDebug()) {
+    return;
+  }
+
+  let reply: string;
+  try {
+    if (!fs.existsSync(outPath)) {
+      reply = '(output file missing)';
+    } else {
+      const raw = fs.readFileSync(outPath, 'utf8').trim();
+      reply = raw === '' ? '(empty)' : raw;
+    }
+  } catch (e) {
+    reply = `(read error: ${e instanceof Error ? e.message : String(e)})`;
+  }
+  reactDebugLog('phase=check llm_reply:\n', truncateForDebug(reply));
 
   let calls: string;
   try {
@@ -83,5 +103,5 @@ export const logObservePhaseLlmOutput = (outPath: string, callsPath: string): vo
   } catch (e) {
     calls = `(read error: ${e instanceof Error ? e.message : String(e)})`;
   }
-  reactDebugLog('phase=observe tool_calls:\n', truncateForDebug(calls));
+  reactDebugLog('phase=check tool_calls:\n', truncateForDebug(calls));
 };

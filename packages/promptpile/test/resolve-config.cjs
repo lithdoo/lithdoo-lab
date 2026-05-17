@@ -71,6 +71,33 @@ try {
     '0.1'
   ]);
   assert.strictEqual(cfgCliTemp.temperature, 0.1, 'cli --temperature overrides toml');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\nllm_api_extra_body = { a = 1 }\n'
+  );
+  const cfgTomlExtra = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.deepStrictEqual(cfgTomlExtra.extraBody, { a: 1 }, 'toml llm_api_extra_body');
+
+  fs.writeFileSync(path.join(msgAbs, '.env'), 'PROMPTPILE_LLM_API_EXTRA_BODY={"b":2}\n');
+  const cfgEnvExtra = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.deepStrictEqual(cfgEnvExtra.extraBody, { a: 1 }, 'toml extra_body wins over scan env');
+
+  fs.writeFileSync(tomlPath, '[promptpile]\n');
+  const cfgScanExtra = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.deepStrictEqual(cfgScanExtra.extraBody, { b: 2 }, 'scan env extra_body when toml unset');
+
+  const cfgCliExtra = resolveConfig(tmp, [
+    'node',
+    fakeScript,
+    '--config',
+    'app.toml',
+    '-k',
+    'key',
+    '--extra-body',
+    '{"c":3}'
+  ]);
+  assert.deepStrictEqual(cfgCliExtra.extraBody, { c: 3 }, 'cli --extra-body overrides env');
 } finally {
   process.chdir(prevCwd);
   if (hadModel) {

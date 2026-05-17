@@ -1,4 +1,5 @@
 import { trimEnv } from 'promptpile/dist/config';
+import { parseExtraBodyInput } from 'promptpile/dist/llm-extra-body';
 import { parseTemperatureInput } from 'promptpile/dist/llm-sampling';
 import { envBool, trim } from './merge-utils';
 
@@ -12,9 +13,11 @@ export interface ReactEnvLayer {
   maxStep?: number;
   thoughtPrompt?: string;
   observePrompt?: string;
+  checkPrompt?: string;
   finalPrompt?: string;
   thoughtLlmApi?: string;
   observeLlmApi?: string;
+  checkLlmApi?: string;
   finalLlmApi?: string;
   thoughtLlmApiKey?: string;
   thoughtLlmApiKeyEnv?: string;
@@ -24,13 +27,22 @@ export interface ReactEnvLayer {
   observeLlmApiKeyEnv?: string;
   observeLlmApiModel?: string;
   observeLlmApiBaseUrl?: string;
+  checkLlmApiKey?: string;
+  checkLlmApiKeyEnv?: string;
+  checkLlmApiModel?: string;
+  checkLlmApiBaseUrl?: string;
   finalLlmApiKey?: string;
   finalLlmApiKeyEnv?: string;
   finalLlmApiModel?: string;
   finalLlmApiBaseUrl?: string;
   thoughtLlmApiTemperature?: number;
   observeLlmApiTemperature?: number;
+  checkLlmApiTemperature?: number;
   finalLlmApiTemperature?: number;
+  thoughtLlmApiExtraBody?: Record<string, unknown>;
+  observeLlmApiExtraBody?: Record<string, unknown>;
+  checkLlmApiExtraBody?: Record<string, unknown>;
+  finalLlmApiExtraBody?: Record<string, unknown>;
 }
 
 export interface SharedEnvLayer {
@@ -46,6 +58,7 @@ export interface SharedEnvLayer {
   apiKeyEnvName?: string;
   apiBaseUrl?: string;
   temperature?: number;
+  extraBody?: Record<string, unknown>;
 }
 
 const mapRecord = (r: Record<string, string>, get: (k: string) => string | undefined): SharedEnvLayer => {
@@ -98,6 +111,10 @@ const mapRecord = (r: Record<string, string>, get: (k: string) => string | undef
   if (temp !== undefined) {
     out.temperature = parseTemperatureInput(temp);
   }
+  const extraBody = get('PROMPTPILE_LLM_API_EXTRA_BODY');
+  if (extraBody !== undefined) {
+    out.extraBody = parseExtraBodyInput(extraBody);
+  }
   return out;
 };
 
@@ -146,6 +163,10 @@ export const mapReactEnvRecord = (r: Record<string, string>): ReactEnvLayer => {
   if (op !== undefined) {
     out.observePrompt = op;
   }
+  const cp = get('PROMPTPILE_REACT_CHECK_PROMPT');
+  if (cp !== undefined) {
+    out.checkPrompt = cp;
+  }
   const fp = get('PROMPTPILE_REACT_FINAL_PROMPT');
   if (fp !== undefined) {
     out.finalPrompt = fp;
@@ -158,6 +179,7 @@ export const mapReactEnvRecord = (r: Record<string, string>): ReactEnvLayer => {
   };
   bind('PROMPTPILE_REACT_THOUGHT_LLM_API', 'thoughtLlmApi', '');
   bind('PROMPTPILE_REACT_OBSERVE_LLM_API', 'observeLlmApi', '');
+  bind('PROMPTPILE_REACT_CHECK_LLM_API', 'checkLlmApi', '');
   bind('PROMPTPILE_REACT_FINAL_LLM_API', 'finalLlmApi', '');
   const tKey = get('PROMPTPILE_REACT_THOUGHT_LLM_API_KEY');
   if (tKey !== undefined) {
@@ -191,6 +213,22 @@ export const mapReactEnvRecord = (r: Record<string, string>): ReactEnvLayer => {
   if (oBase !== undefined) {
     out.observeLlmApiBaseUrl = oBase;
   }
+  const cKey = get('PROMPTPILE_REACT_CHECK_LLM_API_KEY');
+  if (cKey !== undefined) {
+    out.checkLlmApiKey = cKey;
+  }
+  const cEnv = get('PROMPTPILE_REACT_CHECK_LLM_API_KEY_ENV');
+  if (cEnv !== undefined) {
+    out.checkLlmApiKeyEnv = cEnv;
+  }
+  const cModel = get('PROMPTPILE_REACT_CHECK_LLM_API_MODEL');
+  if (cModel !== undefined) {
+    out.checkLlmApiModel = cModel;
+  }
+  const cBase = get('PROMPTPILE_REACT_CHECK_LLM_API_BASE_URL');
+  if (cBase !== undefined) {
+    out.checkLlmApiBaseUrl = cBase;
+  }
   const fKey = get('PROMPTPILE_REACT_FINAL_LLM_API_KEY');
   if (fKey !== undefined) {
     out.finalLlmApiKey = fKey;
@@ -215,9 +253,29 @@ export const mapReactEnvRecord = (r: Record<string, string>): ReactEnvLayer => {
   if (oTemp !== undefined) {
     out.observeLlmApiTemperature = parseTemperatureInput(oTemp);
   }
+  const cTemp = get('PROMPTPILE_REACT_CHECK_LLM_API_TEMPERATURE');
+  if (cTemp !== undefined) {
+    out.checkLlmApiTemperature = parseTemperatureInput(cTemp);
+  }
   const fTemp = get('PROMPTPILE_REACT_FINAL_LLM_API_TEMPERATURE');
   if (fTemp !== undefined) {
     out.finalLlmApiTemperature = parseTemperatureInput(fTemp);
+  }
+  const tExtra = get('PROMPTPILE_REACT_THOUGHT_LLM_API_EXTRA_BODY');
+  if (tExtra !== undefined) {
+    out.thoughtLlmApiExtraBody = parseExtraBodyInput(tExtra);
+  }
+  const oExtra = get('PROMPTPILE_REACT_OBSERVE_LLM_API_EXTRA_BODY');
+  if (oExtra !== undefined) {
+    out.observeLlmApiExtraBody = parseExtraBodyInput(oExtra);
+  }
+  const cExtra = get('PROMPTPILE_REACT_CHECK_LLM_API_EXTRA_BODY');
+  if (cExtra !== undefined) {
+    out.checkLlmApiExtraBody = parseExtraBodyInput(cExtra);
+  }
+  const fExtra = get('PROMPTPILE_REACT_FINAL_LLM_API_EXTRA_BODY');
+  if (fExtra !== undefined) {
+    out.finalLlmApiExtraBody = parseExtraBodyInput(fExtra);
   }
   const thoughtApi = get('PROMPTPILE_REACT_THOUGHT_LLM_API');
   if (thoughtApi !== undefined) {
@@ -226,6 +284,10 @@ export const mapReactEnvRecord = (r: Record<string, string>): ReactEnvLayer => {
   const observeApi = get('PROMPTPILE_REACT_OBSERVE_LLM_API');
   if (observeApi !== undefined) {
     out.observeLlmApi = observeApi;
+  }
+  const checkApi = get('PROMPTPILE_REACT_CHECK_LLM_API');
+  if (checkApi !== undefined) {
+    out.checkLlmApi = checkApi;
   }
   const finalApi = get('PROMPTPILE_REACT_FINAL_LLM_API');
   if (finalApi !== undefined) {

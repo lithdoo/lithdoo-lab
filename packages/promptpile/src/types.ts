@@ -63,6 +63,8 @@ export interface Config {
   apiBaseUrl: string;
   /** Merged sampling temperature; default 0.8 when unset at all layers. */
   temperature: number;
+  /** Merged extra request body fields; omitted when unset at all layers. */
+  extraBody?: Record<string, unknown>;
   format: 'text' | 'json';
   continueMode: boolean;
   inputMode: boolean;

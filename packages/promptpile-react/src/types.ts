@@ -5,11 +5,13 @@ export interface PhaseLlmConfig {
   apiKey: string;
   apiBaseUrl: string;
   temperature: number;
+  extraBody?: Record<string, unknown>;
 }
 
 export interface ReactPromptPaths {
   thought?: string;
   observe?: string;
+  check?: string;
   final?: string;
 }
 
@@ -21,6 +23,7 @@ export interface ReactCliOverrides {
   apiKey?: string;
   apiBaseUrl?: string;
   temperature?: number;
+  extraBody?: Record<string, unknown>;
   quiet?: boolean;
   toolsFile?: string;
   afterHookPath?: string;
@@ -42,9 +45,10 @@ export interface ResolvedReactConfig {
   phases: {
     thought: PhaseLlmConfig;
     observe: PhaseLlmConfig;
+    check: PhaseLlmConfig;
     final: PhaseLlmConfig;
   };
   prompts: ReactPromptTexts;
 }
 
-export type ReactPhase = 'thought' | 'observe' | 'final';
+export type ReactPhase = 'thought' | 'observe' | 'check' | 'final';

@@ -42,13 +42,15 @@ const createPayload = (
   stream: boolean,
   tools: ToolDefinition[] | undefined,
   toolChoice: ChatApiToolChoice | undefined,
-  temperature: number
+  temperature: number,
+  extraBody?: Record<string, unknown>
 ) => {
   const body: Record<string, unknown> = {
     model,
     stream,
     messages,
-    temperature
+    temperature,
+    ...(extraBody ?? {})
   };
   if (tools && tools.length > 0) {
     body.tools = tools;
@@ -158,11 +160,12 @@ export const callAI = async (
   messages: ChatMessage[],
   tools: ToolDefinition[] | undefined,
   toolChoice: ChatApiToolChoice | undefined,
-  temperature: number
+  temperature: number,
+  extraBody?: Record<string, unknown>
 ): Promise<AiCallResult> => {
   const url = `${trimTrailingSlash(apiBaseUrl)}/chat/completions`;
   const headers = createHeaders(apiKey);
-  const payload = createPayload(model, messages, false, tools, toolChoice, temperature);
+  const payload = createPayload(model, messages, false, tools, toolChoice, temperature, extraBody);
   const dumpSession = beginLlmDump(url, headers, payload);
 
   try {
@@ -209,11 +212,12 @@ export const callAIStream = async (
   tools: ToolDefinition[] | undefined,
   toolChoice: ChatApiToolChoice | undefined,
   temperature: number,
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  extraBody?: Record<string, unknown>
 ): Promise<AiCallResult> => {
   const url = `${trimTrailingSlash(apiBaseUrl)}/chat/completions`;
   const headers = createHeaders(apiKey);
-  const payload = createPayload(model, messages, true, tools, toolChoice, temperature);
+  const payload = createPayload(model, messages, true, tools, toolChoice, temperature, extraBody);
   const dumpSession = beginLlmDump(url, headers, payload);
 
   try {

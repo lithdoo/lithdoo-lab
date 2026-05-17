@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { parseExtraBodyInput } from './llm-extra-body';
 import { parseTemperatureInput } from './llm-sampling';
 import { Config } from './types';
 
@@ -23,6 +24,10 @@ const buildProgram = (): Command => {
     .option(
       '--temperature <n>',
       'Sampling temperature (0–2); overrides llm_api_temperature / [[llm_api]] profile (default 0.8 if unset)'
+    )
+    .option(
+      '--extra-body <json>',
+      'Extra JSON object merged into Chat Completions request body; overrides llm_api_extra_body / [[llm_api]] profile'
     )
     .option('-o, --output <path>', 'Output file path for AI response')
     .option('-q, --quiet', 'Disable normal stdout logs and response output')
@@ -76,6 +81,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
     insertFiles?: string;
     appendFiles?: string;
     temperature?: string;
+    extraBody?: string;
     disableTool?: boolean;
   };
 
@@ -113,6 +119,11 @@ export const parseCli = (argv: string[]): CliParseResult => {
   if (typeof rawTemperature === 'string' && rawTemperature.trim() !== '') {
     temperature = parseTemperatureInput(rawTemperature.trim());
   }
+  const rawExtraBody = options.extraBody as string | undefined;
+  let extraBody: Record<string, unknown> | undefined;
+  if (typeof rawExtraBody === 'string' && rawExtraBody.trim() !== '') {
+    extraBody = parseExtraBodyInput(rawExtraBody.trim());
+  }
 
   return {
     configPath,
@@ -132,6 +143,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
       afterHookCli,
       toolChoice: toolChoiceCli,
       temperature,
+      extraBody,
       disableTool: options.disableTool === true ? true : undefined
     }
   };

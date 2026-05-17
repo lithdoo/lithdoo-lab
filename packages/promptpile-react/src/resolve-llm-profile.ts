@@ -1,3 +1,4 @@
+import type { ExtraBody } from 'promptpile/dist/llm-extra-body';
 import type { LlmApiProfile } from 'promptpile/dist/toml-config';
 import { DEFAULT_TEMPERATURE } from 'promptpile/dist/llm-sampling';
 import type { PhaseLlmConfig } from './types';
@@ -10,6 +11,7 @@ export interface LlmProfileOverrides {
   apiKeyEnv?: string;
   apiBaseUrl?: string;
   temperature?: number;
+  extraBody?: ExtraBody;
 }
 
 const DEFAULT_MODEL = 'gpt-3.5-turbo';
@@ -74,16 +76,24 @@ export const resolveLlmProfile = (
   );
 
   const temperature = overrides.temperature ?? prof?.temperature ?? DEFAULT_TEMPERATURE;
+  const extraBody = overrides.extraBody ?? prof?.extra_body;
 
-  return { model, apiKey, apiBaseUrl, temperature };
+  return { model, apiKey, apiBaseUrl, temperature, extraBody };
 };
 
 export const applyCliLlmOverrides = (
   phase: PhaseLlmConfig,
-  cli: { model?: string; apiKey?: string; apiBaseUrl?: string; temperature?: number }
+  cli: {
+    model?: string;
+    apiKey?: string;
+    apiBaseUrl?: string;
+    temperature?: number;
+    extraBody?: ExtraBody;
+  }
 ): PhaseLlmConfig => ({
   model: trim(cli.model) ?? phase.model,
   apiKey: trim(cli.apiKey) ?? phase.apiKey,
   apiBaseUrl: trim(cli.apiBaseUrl) ?? phase.apiBaseUrl,
-  temperature: cli.temperature ?? phase.temperature
+  temperature: cli.temperature ?? phase.temperature,
+  extraBody: cli.extraBody ?? phase.extraBody
 });

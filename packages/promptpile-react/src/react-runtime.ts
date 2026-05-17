@@ -1,5 +1,6 @@
 import type { ResolvedReactConfig } from './types';
 import {
+  CheckReactProcess,
   CoreReactProcess,
   FinalReactProcess,
   ObserveReactProcess,
@@ -36,7 +37,8 @@ export class PromptpileReactRuntime implements IReactRuntime {
 
     try {
       await this.reactThoughtProcess();
-      const continueOuter = await this.reactObserveProcess();
+      const observeText = await this.reactObserveProcess();
+      const continueOuter = await this.reactCheckProcess(observeText);
       this.currentStep += 1;
       if (!continueOuter) {
         this.stopReason = 'final';
@@ -58,8 +60,12 @@ export class PromptpileReactRuntime implements IReactRuntime {
     await new CoreReactProcess(this.reactProcessCtx(), this.config.prompts.core).run();
   }
 
-  async reactObserveProcess(): Promise<boolean> {
+  async reactObserveProcess(): Promise<string> {
     return new ObserveReactProcess(this.reactProcessCtx(), this.config.prompts.observe).run();
+  }
+
+  async reactCheckProcess(observeText: string): Promise<boolean> {
+    return new CheckReactProcess(this.reactProcessCtx(), this.config.prompts.check).run(observeText);
   }
 
   async reactFinalAnswerProcess(): Promise<void> {

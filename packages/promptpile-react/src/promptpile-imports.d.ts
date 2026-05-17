@@ -13,6 +13,12 @@ declare module 'promptpile/dist/llm-sampling' {
   export function coerceTemperatureValue(v: unknown): number | undefined;
 }
 
+declare module 'promptpile/dist/llm-extra-body' {
+  export type ExtraBody = Record<string, unknown>;
+  export function parseExtraBodyInput(raw: string | undefined): ExtraBody | undefined;
+  export function coerceExtraBodyValue(v: unknown): ExtraBody | undefined;
+}
+
 declare module 'promptpile/dist/toml-config' {
   export interface LlmApiProfile {
     name: string;
@@ -21,6 +27,7 @@ declare module 'promptpile/dist/toml-config' {
     api_key?: string;
     api_key_env?: string;
     temperature?: number;
+    extra_body?: Record<string, unknown>;
   }
 
   export interface ParsedTomlConfig {

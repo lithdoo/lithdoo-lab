@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { parseExtraBodyInput } from 'promptpile/dist/llm-extra-body';
 import { parseTemperatureInput } from 'promptpile/dist/llm-sampling';
 import type { ReactCliOverrides } from './types';
 
@@ -41,6 +42,10 @@ const buildProgram = (): Command => {
       '--temperature <n>',
       'Sampling temperature 0–2 (overrides all phases when set; default 0.8 if unset)'
     )
+    .option(
+      '--extra-body <json>',
+      'Extra JSON object merged into request body (overrides all phases when set)'
+    )
     .option('-q, --quiet', 'Quiet: less stdout from `promptpile` subprocesses')
     .option('-i, --input', 'Terminal user message → next user file (this package; not sent as `promptpile -i`)')
     .option('-c, --continue', 'Append assistant reply to message files (subprocesses append `-c` when set)')
@@ -80,12 +85,19 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     continue?: boolean;
     maxStep?: string;
     temperature?: string;
+    extraBody?: string;
   };
 
   let temperature: number | undefined;
   const rawTemperature = o.temperature;
   if (typeof rawTemperature === 'string' && rawTemperature.trim() !== '') {
     temperature = parseTemperatureInput(rawTemperature.trim());
+  }
+
+  let extraBody: Record<string, unknown> | undefined;
+  const rawExtraBody = o.extraBody;
+  if (typeof rawExtraBody === 'string' && rawExtraBody.trim() !== '') {
+    extraBody = parseExtraBodyInput(rawExtraBody.trim());
   }
 
   return {
@@ -100,7 +112,8 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     inputMode: o.input === true ? true : undefined,
     continueMode: o.continue === true ? true : undefined,
     maxStep: parseMaxStepCli(o.maxStep),
-    temperature
+    temperature,
+    extraBody
   };
 };
 

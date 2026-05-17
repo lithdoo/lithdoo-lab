@@ -5,6 +5,7 @@ import { parseCli } from './cli';
 import { loadEnvFile } from './env-file';
 import { loadTomlConfigFile, type ParsedTomlConfig } from './toml-config';
 import { parseBoolEnv, trimEnv } from './config';
+import { coerceExtraBodyValue, parseExtraBodyInput, type ExtraBody } from './llm-extra-body';
 import {
   coerceTemperatureValue,
   DEFAULT_TEMPERATURE,
@@ -30,6 +31,7 @@ interface FlatLayer {
   appendFiles?: string;
   disableTool?: boolean;
   temperature?: number;
+  extraBody?: ExtraBody;
 }
 
 const trim = (v: string | undefined): string | undefined => {
@@ -149,6 +151,10 @@ const mapProcessEnv = (): FlatLayer => {
   if (temp !== undefined) {
     out.temperature = parseTemperatureInput(temp);
   }
+  const extraBody = trimEnv(e.PROMPTPILE_LLM_API_EXTRA_BODY);
+  if (extraBody !== undefined) {
+    out.extraBody = parseExtraBodyInput(extraBody);
+  }
   return out;
 };
 
@@ -223,6 +229,10 @@ const mapDotEnvRecord = (r: Record<string, string>): FlatLayer => {
   if (temp !== undefined) {
     out.temperature = parseTemperatureInput(temp);
   }
+  const extraBody = get('PROMPTPILE_LLM_API_EXTRA_BODY');
+  if (extraBody !== undefined) {
+    out.extraBody = parseExtraBodyInput(extraBody);
+  }
   return out;
 };
 
@@ -287,6 +297,10 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   let apiKey = getStr(p, 'llm_api_key');
   let apiKeyEnv = getStr(p, 'llm_api_key_env');
   let temperature = getNum(p, 'llm_api_temperature');
+  let extraBody =
+    p.llm_api_extra_body !== undefined
+      ? coerceExtraBodyValue(p.llm_api_extra_body)
+      : undefined;
   if (profileName) {
     const prof = parsed.llmApis.find(
       x => x.name.toLowerCase() === profileName!.toLowerCase()
@@ -297,6 +311,7 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
       apiKey = apiKey ?? trim(prof.api_key);
       apiKeyEnv = apiKeyEnv ?? trim(prof.api_key_env);
       temperature = temperature ?? prof.temperature;
+      extraBody = extraBody ?? prof.extra_body;
     }
   }
   if (model !== undefined) {
@@ -313,6 +328,9 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   }
   if (temperature !== undefined) {
     out.temperature = temperature;
+  }
+  if (extraBody !== undefined) {
+    out.extraBody = extraBody;
   }
   return out;
 };
@@ -364,6 +382,31 @@ const pickNum = (
   return fallback;
 };
 
+const pickRecord = (
+  cli: ExtraBody | undefined,
+  toml: ExtraBody | undefined,
+  scan: ExtraBody | undefined,
+  cwd: ExtraBody | undefined,
+  proc: ExtraBody | undefined
+): ExtraBody | undefined => {
+  if (cli !== undefined) {
+    return cli;
+  }
+  if (toml !== undefined) {
+    return toml;
+  }
+  if (scan !== undefined) {
+    return scan;
+  }
+  if (cwd !== undefined) {
+    return cwd;
+  }
+  if (proc !== undefined) {
+    return proc;
+  }
+  return undefined;
+};
+
 const pickBool = (
   cli: boolean | undefined,
   toml: boolean | undefined,
@@ -402,7 +445,8 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   inputMode: cli.inputMode,
   toolChoice: trim(cli.toolChoice),
   disableTool: cli.disableTool,
-  temperature: cli.temperature
+  temperature: cli.temperature,
+  extraBody: cli.extraBody
 });
 
 export const computeDir0 = (
@@ -622,12 +666,21 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     DEFAULT_TEMPERATURE
   );
 
+  const extraBody = pickRecord(
+    cliLayer.extraBody,
+    tomlLayer.extraBody,
+    scanLayer.extraBody,
+    cwdLayer.extraBody,
+    procLayer.extraBody
+  );
+
   return {
     directory: resolvedDirAbs,
     model,
     apiKey,
     apiBaseUrl,
     temperature,
+    extraBody,
     format,
     continueMode,
     inputMode,
