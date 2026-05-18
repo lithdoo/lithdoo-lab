@@ -61,7 +61,13 @@ TOML 中 **`after_hook = "../after-hook-mcp-exec-calls.bat"`**（相对扫描目
 
 ## 调试
 
-设置 **`PROMPTPILE_REACT_DEBUG=1`** 可在 stderr 看到 **`phase=observe`**、**`phase=check continue=true|false`** 等。子进程 LLM dump 的 **`tag`** 可为 `thought` / `observe` / `check` / `final`（见 **`packages/promptpile-react/README.md`**）。
+**[`run-example.bat`](run-example.bat) 已默认设置 `PROMPTPILE_REACT_DEBUG=1`**，无需手动 export。
+
+- **stderr**：`[promptpile-react] phase=thought` / `phase=observe` / `phase=check continue=true|false` 等。
+- **LLM dump**：每个 Thought / Observe / Check / Final 子进程在 **本目录根**（与 `promptpile-react.toml` 同级，**不是** `messages/`）写入 `{timestamp}-{rand}.req.json` 与 `.res.json`；JSON 内 **`tag`** 为 `thought` / `observe` / `check` / `final`（见 [`packages/promptpile-react/README.md`](../packages/promptpile-react/README.md)）。成功响应的 `.res.json` 在 thinking 模型下可含 **`reasoning_content`** 字段。
+- **Thinking 历史**：Thought / Final 在 `continue=true` 时，若模型返回 `reasoning_content`，会在 **`messages/`** 写入同序号 **`[N]assistant.extra.json`**（与 `[N]assistant.md` / `.calls.jsonl` 并列），供下一轮请求回传，避免 DeepSeek 400。
+- **关闭 dump**：编辑 `run-example.bat`，注释掉 `set "PROMPTPILE_REACT_DEBUG=1"` 那一行。
+- **在 IDE 中查看**：[`.gitignore`](.gitignore) 已忽略 `*.req.json` / `*.res.json`，需在资源管理器打开本目录，或开启「显示 gitignore 忽略的文件」。
 
 ## 运行
 

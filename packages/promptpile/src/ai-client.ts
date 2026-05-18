@@ -12,6 +12,7 @@ interface ChatCompletionResponse {
     message?: {
       content?: string | null;
       tool_calls?: ToolCall[];
+      reasoning_content?: string | null;
     };
   }>;
   error?: { message?: string };
@@ -29,12 +30,21 @@ interface ChatCompletionStreamChunk {
     delta?: {
       content?: string | null;
       tool_calls?: StreamDeltaToolCall[];
+      reasoning_content?: string | null;
     };
   }>;
   error?: { message?: string };
 }
 
 const trimTrailingSlash = (url: string) => url.replace(/\/$/, '');
+
+export const pickNonEmptyString = (v: unknown): string | undefined => {
+  if (typeof v !== 'string') {
+    return undefined;
+  }
+  const t = v.trim();
+  return t.length > 0 ? v : undefined;
+};
 
 const createPayload = (
   model: string,
@@ -186,9 +196,10 @@ export const callAI = async (
     const msg = data.choices?.[0]?.message;
     const content = msg?.content ?? '';
     const toolCalls = normalizeToolCalls(msg?.tool_calls);
+    const reasoningContent = pickNonEmptyString(msg?.reasoning_content);
 
-    finishLlmDumpSuccess(dumpSession, res.status, false, content, toolCalls);
-    return { content, toolCalls };
+    finishLlmDumpSuccess(dumpSession, res.status, false, content, toolCalls, reasoningContent);
+    return { content, toolCalls, reasoningContent };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AI API error')) {
       throw error;
@@ -239,6 +250,7 @@ export const callAIStream = async (
     }
 
     let fullText = '';
+    let fullReasoning = '';
     let buffer = '';
     const streamToolDeltas: StreamDeltaToolCall[] = [];
 
@@ -266,6 +278,10 @@ export const callAIStream = async (
             fullText += piece;
             onChunk(piece);
           }
+          const reasoningPiece = delta?.reasoning_content ?? '';
+          if (reasoningPiece) {
+            fullReasoning += reasoningPiece;
+          }
           const tc = delta?.tool_calls;
           if (tc && tc.length > 0) {
             streamToolDeltas.push(...tc);
@@ -287,6 +303,10 @@ export const callAIStream = async (
             fullText += piece;
             onChunk(piece);
           }
+          const reasoningPiece = delta?.reasoning_content ?? '';
+          if (reasoningPiece) {
+            fullReasoning += reasoningPiece;
+          }
           const tc = delta?.tool_calls;
           if (tc && tc.length > 0) {
             streamToolDeltas.push(...tc);
@@ -299,9 +319,10 @@ export const callAIStream = async (
 
     const merged = mergeStreamToolCalls(streamToolDeltas);
     const toolCalls = merged.length > 0 ? merged : undefined;
+    const reasoningContent = pickNonEmptyString(fullReasoning);
 
-    finishLlmDumpSuccess(dumpSession, res.status, true, fullText, toolCalls);
-    return { content: fullText, toolCalls };
+    finishLlmDumpSuccess(dumpSession, res.status, true, fullText, toolCalls, reasoningContent);
+    return { content: fullText, toolCalls, reasoningContent };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AI API error')) {
       throw error;

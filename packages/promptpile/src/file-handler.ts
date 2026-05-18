@@ -2,12 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { readFileSync as readUtf8FileFromDisk } from '@agent-tool-lite/file';
 import { normalizeToolCalls } from './ai-client';
-import type { ChatMessage, FileInfo, ToolCall, ToolResultLine } from './types';
+import type { AssistantExtraPayload, ChatMessage, FileInfo, ToolCall, ToolResultLine } from './types';
 import { formatMissingToolResultContent } from './types';
 
 const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
 const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/i;
 const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/i;
+const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/i;
 
 export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
@@ -31,7 +32,7 @@ const tier = (f: FileInfo): number => {
   if (f.fileKind === 'assistant_result') {
     return 3;
   }
-  if (f.fileKind === 'assistant_call') {
+  if (f.fileKind === 'assistant_call' || f.fileKind === 'assistant_extra') {
     return 2;
   }
   if (f.fileKind === 'message' && f.role === 'assistant' && f.extension === 'md') {
@@ -68,19 +69,7 @@ export const scanDirectory = (directory: string): FileInfo[] => {
       if (entry.isDirectory()) {
         traverse(fullPath);
       } else if (entry.isFile()) {
-        let m = entry.name.match(FILE_PATTERN);
-        if (m) {
-          const ext = m[3].toLowerCase() as 'md' | 'json';
-          files.push({
-            path: fullPath,
-            idx: parseInt(m[1], 10),
-            role: m[2],
-            extension: ext,
-            fileKind: 'message'
-          });
-          continue;
-        }
-        m = entry.name.match(ASSISTANT_CALL_PATTERN);
+        let m = entry.name.match(ASSISTANT_CALL_PATTERN);
         if (m) {
           files.push({
             path: fullPath,
@@ -99,6 +88,29 @@ export const scanDirectory = (directory: string): FileInfo[] => {
             role: 'assistant',
             extension: 'jsonl',
             fileKind: 'assistant_result'
+          });
+          continue;
+        }
+        m = entry.name.match(ASSISTANT_EXTRA_PATTERN);
+        if (m) {
+          files.push({
+            path: fullPath,
+            idx: parseInt(m[1], 10),
+            role: 'assistant',
+            extension: 'json',
+            fileKind: 'assistant_extra'
+          });
+          continue;
+        }
+        m = entry.name.match(FILE_PATTERN);
+        if (m) {
+          const ext = m[3].toLowerCase() as 'md' | 'json';
+          files.push({
+            path: fullPath,
+            idx: parseInt(m[1], 10),
+            role: m[2],
+            extension: ext,
+            fileKind: 'message'
           });
         }
       }
@@ -194,10 +206,32 @@ const parseAssistantResultFile = (raw: string): ToolResultLine[] => {
   return out;
 };
 
+export const parseAssistantExtraFile = (raw: string): string => {
+  const text = stripBom(raw).trim();
+  if (!text) {
+    throw new Error('assistant.extra.json is empty');
+  }
+  let obj: unknown;
+  try {
+    obj = JSON.parse(text);
+  } catch {
+    throw new Error('assistant.extra.json must be valid JSON');
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    throw new Error('assistant.extra.json must be a JSON object');
+  }
+  const rec = obj as AssistantExtraPayload;
+  if (typeof rec.reasoning_content !== 'string' || !rec.reasoning_content.trim()) {
+    throw new Error('assistant.extra.json must include non-empty string "reasoning_content"');
+  }
+  return rec.reasoning_content;
+};
+
 const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
   const idx = group[0]?.idx ?? 0;
   const messages: ChatMessage[] = [];
   const callFile = group.find(f => f.fileKind === 'assistant_call');
+  const extraFile = group.find(f => f.fileKind === 'assistant_extra');
   const resultFile = group.find(f => f.fileKind === 'assistant_result');
   const messageFiles = group.filter(f => f.fileKind === 'message');
   const assistantMdFile = messageFiles.find(
@@ -222,25 +256,41 @@ const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
   const assistantText = assistantMdFile
     ? readMessageFileContent(assistantMdFile)
     : undefined;
+  const reasoningContent = extraFile
+    ? parseAssistantExtraFile(readUtf8FileFromDisk(extraFile.path))
+    : undefined;
+  const assistantExtra =
+    reasoningContent !== undefined ? { reasoning_content: reasoningContent } : {};
+
   const hasCalls = !!callToolCalls && callToolCalls.length > 0;
   const hasMdFile = !!assistantMdFile;
+  const hasExtra = reasoningContent !== undefined;
 
   if (hasCalls && hasMdFile) {
     messages.push({
       role: 'assistant',
       content: assistantText ?? '',
-      tool_calls: callToolCalls
+      tool_calls: callToolCalls,
+      ...assistantExtra
     });
   } else if (hasCalls) {
     messages.push({
       role: 'assistant',
       content: null,
-      tool_calls: callToolCalls
+      tool_calls: callToolCalls,
+      ...assistantExtra
     });
   } else if (hasMdFile) {
     messages.push({
       role: 'assistant',
-      content: assistantText ?? ''
+      content: assistantText ?? '',
+      ...assistantExtra
+    });
+  } else if (hasExtra) {
+    messages.push({
+      role: 'assistant',
+      content: null,
+      ...assistantExtra
     });
   }
 
@@ -330,9 +380,9 @@ export const appendUserMessage = (directory: string, files: FileInfo[], content:
 
 /**
  * Find the smallest index N (>= max(files.idx)+1) such that none of
- * `[N]assistant.md`, `[N]assistant.calls.jsonl`, `[N]assistant.result.jsonl`
- * exist on disk; used by `appendAssistantTurn` so the markdown reply and the
- * companion `.calls.jsonl` (continue) always share the same `N`.
+ * `[N]assistant.md`, `[N]assistant.calls.jsonl`, `[N]assistant.extra.json`,
+ * `[N]assistant.result.jsonl` exist on disk; used by `appendAssistantTurn` so
+ * companion sidecars (continue) always share the same `N`.
  */
 export const nextAssistantIdx = (directory: string, files: FileInfo[]): number => {
   const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
@@ -340,6 +390,7 @@ export const nextAssistantIdx = (directory: string, files: FileInfo[]): number =
   while (
     fs.existsSync(path.join(directory, `[${idx}]assistant.md`)) ||
     fs.existsSync(path.join(directory, `[${idx}]assistant.calls.jsonl`)) ||
+    fs.existsSync(path.join(directory, `[${idx}]assistant.extra.json`)) ||
     fs.existsSync(path.join(directory, `[${idx}]assistant.result.jsonl`))
   ) {
     idx += 1;
@@ -354,29 +405,44 @@ export const nextAssistantIdx = (directory: string, files: FileInfo[]): number =
  *
  * - When `content` is non-empty, write `[N]assistant.md`.
  * - When `toolCalls` is non-empty, write `[N]assistant.calls.jsonl`.
- * - When neither is present, reserve nothing on disk.
+ * - When `reasoningContent` is non-empty, write `[N]assistant.extra.json`.
+ * - When all three are absent, reserve nothing on disk.
  */
 export const appendAssistantTurn = (
   directory: string,
   files: FileInfo[],
   content: string,
-  toolCalls: ToolCall[] | undefined
-): { idx: number; mdPath?: string; callsPath?: string } => {
+  toolCalls: ToolCall[] | undefined,
+  reasoningContent?: string
+): { idx: number; mdPath?: string; callsPath?: string; extraPath?: string } => {
+  const hasContent = content.length > 0;
+  const hasCalls = !!(toolCalls && toolCalls.length > 0);
+  const hasReasoning = !!(reasoningContent && reasoningContent.trim());
+  if (!hasContent && !hasCalls && !hasReasoning) {
+    return { idx: nextAssistantIdx(directory, files) };
+  }
+
   const idx = nextAssistantIdx(directory, files);
   let mdPath: string | undefined;
   let callsPath: string | undefined;
+  let extraPath: string | undefined;
 
-  if (content.length > 0) {
+  if (hasContent) {
     mdPath = path.join(directory, `[${idx}]assistant.md`);
     fs.writeFileSync(mdPath, content, 'utf8');
   }
-  if (toolCalls && toolCalls.length > 0) {
+  if (hasCalls) {
     callsPath = path.join(directory, `[${idx}]assistant.calls.jsonl`);
-    const body = toolCalls.map(tc => JSON.stringify(tc)).join('\n') + '\n';
+    const body = toolCalls!.map(tc => JSON.stringify(tc)).join('\n') + '\n';
     fs.writeFileSync(callsPath, body, 'utf8');
   }
+  if (hasReasoning) {
+    extraPath = path.join(directory, `[${idx}]assistant.extra.json`);
+    const payload: AssistantExtraPayload = { reasoning_content: reasoningContent!.trim() };
+    fs.writeFileSync(extraPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  }
 
-  return { idx, mdPath, callsPath };
+  return { idx, mdPath, callsPath, extraPath };
 };
 
 const appendMessage = (directory: string, files: FileInfo[], role: string, content: string): string => {

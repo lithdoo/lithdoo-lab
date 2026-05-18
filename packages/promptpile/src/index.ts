@@ -19,7 +19,7 @@ import {
   loadSidecarMessages
 } from './message-sidecar-files';
 import { isPromptpileDiagnostic } from './diagnostic-log';
-import type { ChatApiToolChoice, ToolCall } from './types';
+import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -70,6 +70,23 @@ const writeCallsFile = (resolvedMainPath: string, toolCalls: ToolCall[] | undefi
   fs.writeFileSync(callsPath, body, 'utf8');
 };
 
+const extraPathForMainOutput = (resolvedMainPath: string): string => {
+  const { dir, name } = path.parse(resolvedMainPath);
+  return path.join(dir, `${name}.extra.json`);
+};
+
+const writeExtraFile = (resolvedMainPath: string, reasoningContent: string | undefined): void => {
+  if (!reasoningContent) {
+    return;
+  }
+  const payload: AssistantExtraPayload = { reasoning_content: reasoningContent };
+  fs.writeFileSync(
+    extraPathForMainOutput(resolvedMainPath),
+    `${JSON.stringify(payload, null, 2)}\n`,
+    'utf8'
+  );
+};
+
 const printToolCallsLines = (toolCalls: ToolCall[] | undefined, quiet: boolean): void => {
   if (quiet || !toolCalls?.length) {
     return;
@@ -106,7 +123,7 @@ async function main(): Promise<void> {
     const hasInsertFiles = (config.insertFilesCli?.trim() ?? '') !== '';
     if (files.length === 0 && !hasInsertFiles) {
       console.error(
-        'Error: No files found matching message patterns ([idx]role.md/json, [idx]assistant.calls.jsonl, [idx]assistant.result.jsonl)'
+        'Error: No files found matching message patterns ([idx]role.md/json, [idx]assistant.calls.jsonl, [idx]assistant.extra.json, [idx]assistant.result.jsonl)'
       );
       process.exit(1);
     }
@@ -171,6 +188,7 @@ async function main(): Promise<void> {
 
     let response = '';
     let toolCalls: ToolCall[] | undefined;
+    let reasoningContent: string | undefined;
 
     if (config.format === 'json') {
       const result = await callAI(
@@ -185,10 +203,12 @@ async function main(): Promise<void> {
       );
       response = result.content;
       toolCalls = result.toolCalls;
+      reasoningContent = result.reasoningContent;
 
       if (resolvedOutput) {
         fs.writeFileSync(resolvedOutput, response, 'utf8');
         writeCallsFile(resolvedOutput, toolCalls);
+        writeExtraFile(resolvedOutput, reasoningContent);
       }
       if (!quiet) {
         process.stdout.write(
@@ -213,20 +233,30 @@ async function main(): Promise<void> {
       );
       response = result.content;
       toolCalls = result.toolCalls;
+      reasoningContent = result.reasoningContent;
 
       if (resolvedOutput) {
         fs.writeFileSync(resolvedOutput, response, 'utf8');
         writeCallsFile(resolvedOutput, toolCalls);
+        writeExtraFile(resolvedOutput, reasoningContent);
       }
       printToolCallsLines(toolCalls, quiet);
     }
 
     let continueMdPath: string | undefined;
     let continueCallsPath: string | undefined;
+    let continueExtraPath: string | undefined;
     if (config.continueMode) {
-      const saved = appendAssistantTurn(config.directory, files, response, toolCalls);
+      const saved = appendAssistantTurn(
+        config.directory,
+        files,
+        response,
+        toolCalls,
+        reasoningContent
+      );
       continueMdPath = saved.mdPath;
       continueCallsPath = saved.callsPath;
+      continueExtraPath = saved.extraPath;
     }
 
     const scanAbs = path.resolve(cwd, config.directory);
@@ -251,7 +281,9 @@ async function main(): Promise<void> {
         quiet,
         responseLength: response.length,
         continueMdPath,
-        continueCallsPath
+        continueCallsPath,
+        continueExtraPath,
+        reasoningContent
       });
       await runAfterHook({
         scriptPath: hookResolution.path,

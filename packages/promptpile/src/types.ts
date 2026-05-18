@@ -23,8 +23,14 @@ export interface ChatMessage {
   role: string;
   content?: string | null;
   tool_calls?: ToolCall[];
+  reasoning_content?: string | null;
   tool_call_id?: string;
   name?: string;
+}
+
+/** `[idx]assistant.extra.json` / `{basename}.extra.json` on-disk shape. */
+export interface AssistantExtraPayload {
+  reasoning_content: string;
 }
 
 /** One line in `[idx]assistant.result.jsonl`. */
@@ -45,7 +51,7 @@ export type ChatApiToolChoice =
   | ChatApiToolChoiceString
   | { type: 'function'; function: { name: string } };
 
-export type FileKind = 'message' | 'assistant_call' | 'assistant_result';
+export type FileKind = 'message' | 'assistant_call' | 'assistant_result' | 'assistant_extra';
 
 export interface FileInfo {
   path: string;
@@ -94,4 +100,5 @@ export interface Config {
 export interface AiCallResult {
   content: string;
   toolCalls: ToolCall[] | undefined;
+  reasoningContent: string | undefined;
 }

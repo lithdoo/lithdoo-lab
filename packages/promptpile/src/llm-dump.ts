@@ -68,6 +68,7 @@ export type LlmResDumpSuccess = {
   stream: boolean;
   content: string;
   tool_calls?: ToolCall[];
+  reasoning_content?: string;
 };
 
 export type LlmResDumpFailure = {
@@ -120,18 +121,23 @@ export const finishLlmDumpSuccess = (
   status: number,
   stream: boolean,
   content: string,
-  toolCalls: ToolCall[] | undefined
+  toolCalls: ToolCall[] | undefined,
+  reasoningContent?: string
 ): void => {
   if (session === null) {
     return;
   }
-  writeLlmResDump(session.cwd, session.id, { iso: session.iso, tag: session.tag }, {
+  const result: LlmResDumpSuccess = {
     ok: true,
     status,
     stream,
     content,
     tool_calls: toolCalls
-  });
+  };
+  if (reasoningContent) {
+    result.reasoning_content = reasoningContent;
+  }
+  writeLlmResDump(session.cwd, session.id, { iso: session.iso, tag: session.tag }, result);
 };
 
 export const finishLlmDumpFailure = (

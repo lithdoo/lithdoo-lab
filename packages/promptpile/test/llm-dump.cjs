@@ -69,6 +69,21 @@ try {
   assert.strictEqual(resDoc.content, 'hello');
   assert.strictEqual(resDoc.tool_calls.length, 1);
 
+  writeLlmResDump(
+    tmp,
+    `${id}-r`,
+    { iso, tag: 'thought' },
+    {
+      ok: true,
+      status: 200,
+      stream: true,
+      content: 'hi',
+      reasoning_content: 'thinking trace'
+    }
+  );
+  const resReasoning = JSON.parse(fs.readFileSync(path.join(tmp, `${id}-r.res.json`), 'utf8'));
+  assert.strictEqual(resReasoning.reasoning_content, 'thinking trace');
+
   console.log('llm-dump.cjs: ok');
 } finally {
   if (prevDump === undefined) {
