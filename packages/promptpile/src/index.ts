@@ -9,7 +9,7 @@ import {
   buildMessages,
   scanDirectory
 } from './file-handler';
-import { callAI, callAIStream } from './ai-client';
+import { callAIStream } from './ai-client';
 import { loadTools } from './tools-loader';
 import { buildPromptpileHookEnv, resolveAfterHookScript, runAfterHook } from './after-hook';
 import { effectiveToolChoiceForRequest, parseToolChoiceInput } from './tool-choice';
@@ -190,58 +190,31 @@ async function main(): Promise<void> {
     let toolCalls: ToolCall[] | undefined;
     let reasoningContent: string | undefined;
 
-    if (config.format === 'json') {
-      const result = await callAI(
-        config.apiKey,
-        config.apiBaseUrl,
-        config.model,
-        messages,
-        tools,
-        toolChoiceForApi,
-        config.temperature,
-        config.extraBody
-      );
-      response = result.content;
-      toolCalls = result.toolCalls;
-      reasoningContent = result.reasoningContent;
+    const result = await callAIStream(
+      config.apiKey,
+      config.apiBaseUrl,
+      config.model,
+      messages,
+      tools,
+      toolChoiceForApi,
+      config.temperature,
+      (chunk) => {
+        if (!quiet) {
+          process.stdout.write(chunk);
+        }
+      },
+      config.extraBody
+    );
+    response = result.content;
+    toolCalls = result.toolCalls;
+    reasoningContent = result.reasoningContent;
 
-      if (resolvedOutput) {
-        fs.writeFileSync(resolvedOutput, response, 'utf8');
-        writeCallsFile(resolvedOutput, toolCalls);
-        writeExtraFile(resolvedOutput, reasoningContent);
-      }
-      if (!quiet) {
-        process.stdout.write(
-          `${JSON.stringify({ response, tool_calls: toolCalls ?? null }, null, 2)}\n`
-        );
-      }
-    } else {
-      const result = await callAIStream(
-        config.apiKey,
-        config.apiBaseUrl,
-        config.model,
-        messages,
-        tools,
-        toolChoiceForApi,
-        config.temperature,
-        (chunk) => {
-          if (!quiet) {
-            process.stdout.write(chunk);
-          }
-        },
-        config.extraBody
-      );
-      response = result.content;
-      toolCalls = result.toolCalls;
-      reasoningContent = result.reasoningContent;
-
-      if (resolvedOutput) {
-        fs.writeFileSync(resolvedOutput, response, 'utf8');
-        writeCallsFile(resolvedOutput, toolCalls);
-        writeExtraFile(resolvedOutput, reasoningContent);
-      }
-      printToolCallsLines(toolCalls, quiet);
+    if (resolvedOutput) {
+      fs.writeFileSync(resolvedOutput, response, 'utf8');
+      writeCallsFile(resolvedOutput, toolCalls);
+      writeExtraFile(resolvedOutput, reasoningContent);
     }
+    printToolCallsLines(toolCalls, quiet);
 
     let continueMdPath: string | undefined;
     let continueCallsPath: string | undefined;
@@ -276,7 +249,6 @@ async function main(): Promise<void> {
         scanAbs,
         resolvedOutput,
         toolCalls,
-        format: config.format,
         model: config.model,
         quiet,
         responseLength: response.length,

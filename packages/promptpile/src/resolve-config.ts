@@ -20,7 +20,6 @@ interface FlatLayer {
   apiKeyEnvName?: string;
   apiBaseUrl?: string;
   output?: string;
-  format?: string;
   quiet?: boolean;
   continueMode?: boolean;
   inputMode?: boolean;
@@ -110,10 +109,6 @@ const mapProcessEnv = (): FlatLayer => {
   if (q !== undefined) {
     out.quiet = q;
   }
-  const f = trimEnv(e.PROMPTPILE_FORMAT);
-  if (f !== undefined) {
-    out.format = f;
-  }
   const cont = envBool(e.PROMPTPILE_CONTINUE);
   if (cont !== undefined) {
     out.continueMode = cont;
@@ -189,10 +184,6 @@ const mapDotEnvRecord = (r: Record<string, string>): FlatLayer => {
   if (q !== undefined) {
     out.quiet = q;
   }
-  const f = get('PROMPTPILE_FORMAT');
-  if (f !== undefined) {
-    out.format = f;
-  }
   const cont = envBool(r.PROMPTPILE_CONTINUE);
   if (cont !== undefined) {
     out.continueMode = cont;
@@ -242,10 +233,6 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   const dir = getStr(p, 'dir');
   if (dir !== undefined) {
     out.directory = dir;
-  }
-  const fmt = getStr(p, 'format');
-  if (fmt !== undefined) {
-    out.format = fmt;
   }
   const outv = p.output;
   if (typeof outv === 'string') {
@@ -439,7 +426,6 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   apiKey: trim(cli.apiKey),
   apiBaseUrl: trim(cli.apiBaseUrl),
   output: trim(cli.output),
-  format: trim(cli.format),
   quiet: cli.quiet,
   continueMode: cli.continueMode,
   inputMode: cli.inputMode,
@@ -564,15 +550,6 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     apiKey = trim(process.env[apiKeyEnvName]) ?? '';
   }
 
-  const fmtRaw = pickOptStr(
-    cliLayer.format,
-    tomlLayer.format,
-    scanLayer.format,
-    cwdLayer.format,
-    procLayer.format
-  );
-  const format: 'text' | 'json' = fmtRaw === 'json' ? 'json' : 'text';
-
   const output = pickOptStr(
     cliLayer.output,
     tomlLayer.output,
@@ -681,7 +658,6 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     apiBaseUrl,
     temperature,
     extraBody,
-    format,
     continueMode,
     inputMode,
     output,

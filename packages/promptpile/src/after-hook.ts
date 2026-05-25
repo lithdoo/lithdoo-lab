@@ -65,7 +65,6 @@ export const buildPromptpileHookEnv = (params: {
   scanAbs: string;
   resolvedOutput?: string;
   toolCalls: ToolCall[] | undefined;
-  format: 'text' | 'json';
   model: string;
   quiet: boolean;
   responseLength: number;
@@ -81,7 +80,6 @@ export const buildPromptpileHookEnv = (params: {
     scanAbs,
     resolvedOutput,
     toolCalls,
-    format,
     model,
     quiet,
     responseLength,
@@ -102,7 +100,6 @@ export const buildPromptpileHookEnv = (params: {
     PROMPTPILE_ASSISTANT_MD_FILE: continueMdPath ?? '',
     PROMPTPILE_ASSISTANT_CALL_FILE: continueCallsPath ?? '',
     PROMPTPILE_ASSISTANT_EXTRA_FILE: continueExtraPath ?? '',
-    PROMPTPILE_FORMAT: format,
     PROMPTPILE_MODEL: model,
     PROMPTPILE_QUIET: quiet ? '1' : '0',
     PROMPTPILE_HAS_TOOL_CALLS: toolCalls && toolCalls.length > 0 ? '1' : '0',

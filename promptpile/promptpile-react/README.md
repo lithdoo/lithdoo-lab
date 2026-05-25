@@ -31,7 +31,7 @@ React CLI
 ```
 
 - **仅 react 消费**：`max_step`、`thought_prompt` / `observe_prompt` / `check_prompt` / `final_prompt`、分阶段 `*_llm_api` / `*_llm_api_temperature` / `*_llm_api_extra_body`（含 `check_*`）等；合并后经 `buildPhaseArgv` 向子进程传 `-m/-k/-b/--temperature` 及可选 `--extra-body`（JSON 字符串）。
-- **不读取、不转发**：`[promptpile]` 的 `format`、`output`、`tool_choice`、`disable_tool`、`insert_files`、`append_files`（ReAct 各阶段在代码里固定行为：Observe 全量目录 + `--append-files` + `-o` 纯文本；Check 空目录 + `--insert-files`（check + observe 正文）+ `react_check_decision`；Final `--disable-tool`；Thought/Final 用 `--insert-files`）。
+- **不读取、不转发**：`[promptpile]` 的 `output`、`tool_choice`、`disable_tool`、`insert_files`、`append_files`（ReAct 各阶段在代码里固定行为：Observe 全量目录 + `--append-files` + `-o` 纯文本；Check 空目录 + `--insert-files`（check + observe 正文）+ `react_check_decision`；Final `--disable-tool`；Thought/Final 用 `--insert-files`）。
 - 示例：[`example.toml`](example.toml)、[`example.env`](example.env)、[`example.sh`](example.sh)。
 
 ## 编排调试（`PROMPTPILE_REACT_DEBUG`）
@@ -164,7 +164,7 @@ npm run build
 | `-c, --continue` | **Thought / Final** 子进程 argv 含 `-c`（Observe 不含）；与 `-i` 同时可外层循环读终端 |
 | `--max-step <n>` | 仅本包；未设则入口只跑 **1** 轮 `nextStep` |
 
-**本包不声明、子进程不由用户 `[promptpile]` 配置的项**：`-f` / `--format`、`-o`（主 CLI）、`--tool-choice`、`--insert-files` / `--append-files`（由本包按阶段写入临时 sidecar）。Final 阶段由代码固定 `--disable-tool`；Observe 使用临时 `-o`。
+**本包不声明、子进程不由用户 `[promptpile]` 配置的项**：`-o`（主 CLI）、`--tool-choice`、`--insert-files` / `--append-files`（由本包按阶段写入临时 sidecar）。Final 阶段由代码固定 `--disable-tool`；Observe 使用临时 `-o`。
 
 ## 开发
 

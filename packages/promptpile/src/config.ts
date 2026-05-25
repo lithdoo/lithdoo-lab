@@ -31,7 +31,6 @@ export const loadConfig = (options: Partial<Config>): Config => {
     apiBaseUrl: options.apiBaseUrl || process.env.AI_API_BASE_URL || 'https://api.openai.com/v1',
     temperature: options.temperature ?? DEFAULT_TEMPERATURE,
     extraBody: options.extraBody,
-    format: options.format || 'text',
     continueMode: options.continueMode ?? false,
     inputMode: options.inputMode ?? false,
     output: options.output || process.env.OUTPUT_FILE || undefined,

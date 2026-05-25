@@ -31,7 +31,6 @@ const buildProgram = (): Command => {
     )
     .option('-o, --output <path>', 'Output file path for AI response')
     .option('-q, --quiet', 'Disable normal stdout logs and response output')
-    .option('-f, --format <format>', 'Output format (text or json)')
     .option('-i, --input', 'Read user input from terminal and append as next user message')
     .option('-c, --continue', 'Append assistant reply to next message file')
     .option(
@@ -72,7 +71,6 @@ export const parseCli = (argv: string[]): CliParseResult => {
     apiBaseUrl?: string;
     output?: string;
     quiet?: boolean;
-    format?: 'text' | 'json';
     continue?: boolean;
     input?: boolean;
     toolsFile?: string;
@@ -134,7 +132,6 @@ export const parseCli = (argv: string[]): CliParseResult => {
       apiBaseUrl: options.apiBaseUrl,
       output: options.output,
       quiet: options.quiet as boolean | undefined,
-      format: options.format as 'text' | 'json' | undefined,
       continueMode: options.continue === true ? true : undefined,
       inputMode: options.input === true ? true : undefined,
       toolsFileCli,

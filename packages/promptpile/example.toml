@@ -20,7 +20,6 @@
 
 [promptpile]
     dir = './message'
-    format = 'text'
     output = true
     quiet = false
     after_hook = './after_hook.sh'

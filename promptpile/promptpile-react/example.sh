@@ -14,7 +14,7 @@
 # --max-step=10 — [promptpile-react].max_step（CLI 优先于 TOML/env）
 # 子进程不传 --config；各阶段由 buildPhaseArgv 显式拼 -d/-m/-k/-b 等（thought→observe 文本→check 决策→final）
 #
-# [promptpile] 中的 format / output / tool_choice / insert_files 仅供裸跑 promptpile，react 模式忽略
+# [promptpile] 中的 output / tool_choice / insert_files 仅供裸跑 promptpile，react 模式忽略
 #
 # 提示词：TOML thought_prompt 等，或扫描目录下 .react.core.md / .react.observe.md / .react.final.md
 # 环境变量：见 example.env（PROMPTPILE_REACT_* 与 PROMPTPILE_* 分层）
