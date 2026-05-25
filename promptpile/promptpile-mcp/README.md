@@ -51,7 +51,7 @@
 
 实现 MCP 工具列表前，需对齐 promptpile 里已有的两条路径：
 
-1. **静态工具加载** — [`packages/promptpile/src/tools-loader.ts`](../../promptpile/src/tools-loader.ts) 的 `loadTools()`：从显式 **`.toml`**（可含 `extends`）或 `TOOLS_FILE` / `--tools-file` 解析出 OpenAI 形的 `tools[]`；**仅**包含用户/导出定义的工具，无内置 Glob/Grep。
+1. **静态工具加载** — [`packages/promptpile/src/tools-loader.ts`](../../packages/promptpile/src/tools-loader.ts) 的 `loadTools()`：从显式 **`.toml`**（可含 `extends`）或 `TOOLS_FILE` / `--tools-file` 解析出 OpenAI 形的 `tools[]`；**仅**包含用户/导出定义的工具，无内置 Glob/Grep。
 
 MCP 集成：通过 **`export-tools`** 写入 `.tools.toml`，使用稳定前缀（如 `mcp__<serverId>__<toolName>`），避免与静态工具重名。详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)。
 
@@ -90,7 +90,7 @@ promptpile 单次运行仍是一次补全；**执行**模型返回的 `tool_call
 |------|------|
 | **`exec-calls` + 网关** | 目录扫描或 **`--input`** 单文件；经 **`POST /v1/calls/exec`**，写 **`stem.result.jsonl`**（详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)）。 |
 | **手工 / 脚本结果文件** | 与现有约定一致：将工具结果写入 `[idx]assistant.result.jsonl`。示例：`example/promptpile-tool-test/scripts/execute-tool-call.ts`。 |
-| **after-hook** | promptpile 完成后执行钩子；环境变量见 [`after-hook.ts`](../../promptpile/src/after-hook.ts)；钩子内可调用 `exec-calls`。 |
+| **after-hook** | promptpile 完成后执行钩子；环境变量见 [`after-hook.ts`](../../packages/promptpile/src/after-hook.ts)；钩子内可调用 `exec-calls`。 |
 | **内置多轮 `--mcp-exec`**（远期） | 在 promptpile 进程内循环执行工具直到无 `tool_calls`。实现与安全成本高，**不与首版网关同步**。 |
 
 ---
@@ -123,7 +123,7 @@ promptpile 单次运行仍是一次补全；**执行**模型返回的 `tool_call
 
 ## 集成方案
 
-**选定路线**：**常驻 `launch` 网关 + `export-tools` 生成 `.tools.toml` + `exec-calls` 处理调用**。不把 MCP 合并逻辑写进 [`packages/promptpile/src/index.ts`](../../promptpile/src/index.ts)。
+**选定路线**：**常驻 `launch` 网关 + `export-tools` 生成 `.tools.toml` + `exec-calls` 处理调用**。不把 MCP 合并逻辑写进 [`packages/promptpile/src/index.ts`](../../packages/promptpile/src/index.ts)。
 
 ### 工作流
 
@@ -182,7 +182,7 @@ flowchart LR
 
 ## After-hook（与 promptpile 联用）
 
-promptpile 在运行结束时可执行钩子脚本，并向子进程注入环境变量（实现见 [`packages/promptpile/src/after-hook.ts`](../promptpile/src/after-hook.ts) 中 **`buildPromptpileHookEnv`**）。与本网关联用时，建议在钩子中自行约定 **`PROMPTPILE_MCP_BASE_URL`**（及可选 **`PROMPTPILE_MCP_TOKEN`**），再调用 **`promptpile-mcp exec-calls`**。
+promptpile 在运行结束时可执行钩子脚本，并向子进程注入环境变量（实现见 [`packages/promptpile/src/after-hook.ts`](../../packages/promptpile/src/after-hook.ts) 中 **`buildPromptpileHookEnv`**）。与本网关联用时，建议在钩子中自行约定 **`PROMPTPILE_MCP_BASE_URL`**（及可选 **`PROMPTPILE_MCP_TOKEN`**），再调用 **`promptpile-mcp exec-calls`**。
 
 | 变量（promptpile 注入） | 含义 |
 |-------------------------|------|
@@ -205,7 +205,7 @@ promptpile 在运行结束时可执行钩子脚本，并向子进程注入环境
 ## 开发与构建
 
 ```bash
-cd packages/promptpile-mcp
+cd promptpile/promptpile-mcp
 npm install
 npm run build
 ```

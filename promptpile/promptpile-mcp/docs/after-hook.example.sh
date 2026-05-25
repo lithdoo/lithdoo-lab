@@ -6,7 +6,7 @@
 #   PROMPTPILE_MCP_BASE_URL  必填方可执行，例如 http://127.0.0.1:8765
 #   PROMPTPILE_MCP_TOKEN     可选，与 launch [gateway].token 一致
 #
-# promptpile 注入变量（见 ../../promptpile/src/after-hook.ts buildPromptpileHookEnv）：
+# promptpile 注入变量（见 ../../packages/promptpile/src/after-hook.ts buildPromptpileHookEnv）：
 #   PROMPTPILE_SCAN_DIRECTORY   消息目录绝对路径
 #   PROMPTPILE_HAS_TOOL_CALLS    本次是否有 tool_calls（'1' / '0'）
 #   PROMPTPILE_CALLS_FILE       主输出旁 *.calls.jsonl（若有）

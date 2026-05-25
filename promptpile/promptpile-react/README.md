@@ -140,8 +140,8 @@ React CLI
 ## 安装与构建
 
 ```bash
-cd ../promptpile && npm install && npm run build
-cd ../promptpile-react
+cd ../../packages/promptpile && npm install && npm run build
+cd ../../promptpile/promptpile-react
 npm install
 npm run build
 ```

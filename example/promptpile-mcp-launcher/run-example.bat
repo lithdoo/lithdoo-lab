@@ -23,5 +23,5 @@ if not exist "%~dp0..\node_modules" (
 )
 
 echo Starting promptpile-mcp launch (Ctrl+C to stop)...
-call npx --prefix "..\..\packages\promptpile-mcp" promptpile-mcp launch --config "%~dp0mcp.toml"
+call npx --prefix "..\..\promptpile\promptpile-mcp" promptpile-mcp launch --config "%~dp0mcp.toml"
 exit /b %ERRORLEVEL%

@@ -20,7 +20,7 @@ Thought（MCP tools + after-hook exec-calls）
 ## 前置条件
 
 - **Node.js 18+**；使用 Playwright MCP 时建议 Node 20+（见 [`promptpile-mcp-launcher`](../promptpile-mcp-launcher/README.md)）。
-- **`packages/promptpile-mcp`**、**`packages/promptpile-react`**、**`packages/promptpile`** 已 **`npm install`**（生成 **`dist/`**）；**`promptpile-react` 默认通过依赖内置 `promptpile/dist/index.js`** 调用 CLI，无需全局 **`promptpile`**（可选 **`PROMPTPILE_BIN`** 覆盖），详见 **`packages/promptpile-react/README.md`**。
+- **`promptpile/promptpile-mcp`**、**`promptpile/promptpile-react`**、**`packages/promptpile`** 已 **`npm install`**（生成 **`dist/`**）；**`promptpile-react` 默认通过依赖内置 `promptpile/dist/index.js`** 调用 CLI，无需全局 **`promptpile`**（可选 **`PROMPTPILE_BIN`** 覆盖），详见 **`promptpile/promptpile-react/README.md`**。
 - **`example`** 目录已 **`npm install`**（与本仓库其它示例一致）。
 - **`curl`** 可用于探测网关 **`/health`**（Windows 10+ 自带）。
 - 运行前在**用户或系统环境**中设置 **`DEEPSEEK_API_KEY`**（与 TOML 中 `api_key_env` 一致）。
@@ -55,7 +55,7 @@ Thought（MCP tools + after-hook exec-calls）
 
 TOML 中 **`after_hook = "../after-hook-mcp-exec-calls.bat"`**（相对扫描目录 `messages/`）。**`run-example.bat`** 在启动 react 前设置 **`PROMPTPILE_MCP_BASE_URL`**，供 hook 调用网关。
 
-- **触发时机**：仅在 **Thought** 阶段的 **`promptpile`** 成功结束后（**Observe**、**Check** 与 **Final** 不带 after-hook，见 **`packages/promptpile-react`**）。
+- **触发时机**：仅在 **Thought** 阶段的 **`promptpile`** 成功结束后（**Observe**、**Check** 与 **Final** 不带 after-hook，见 **`promptpile/promptpile-react`**）。
 - **行为**：若 **`PROMPTPILE_HAS_TOOL_CALLS=1`**（由 **`promptpile`** 注入），则调用 **`promptpile-mcp exec-calls`**，将 **`messages/`** 下 **`*.calls.jsonl`** 转为 **`*.result.jsonl`**。
 - **网关**：**`launch`** 须保持运行；否则 **`exec-calls`** 会失败。
 
@@ -64,7 +64,7 @@ TOML 中 **`after_hook = "../after-hook-mcp-exec-calls.bat"`**（相对扫描目
 **[`run-example.bat`](run-example.bat) 已默认设置 `PROMPTPILE_REACT_DEBUG=1`**，无需手动 export。
 
 - **stderr**：`[promptpile-react] phase=thought` / `phase=observe` / `phase=check continue=true|false` 等。
-- **LLM dump**：每个 Thought / Observe / Check / Final 子进程在 **本目录根**（与 `promptpile-react.toml` 同级，**不是** `messages/`）写入 `{timestamp}-{rand}.req.json` 与 `.res.json`；JSON 内 **`tag`** 为 `thought` / `observe` / `check` / `final`（见 [`packages/promptpile-react/README.md`](../packages/promptpile-react/README.md)）。成功响应的 `.res.json` 在 thinking 模型下可含 **`reasoning_content`** 字段。
+- **LLM dump**：每个 Thought / Observe / Check / Final 子进程在 **本目录根**（与 `promptpile-react.toml` 同级，**不是** `messages/`）写入 `{timestamp}-{rand}.req.json` 与 `.res.json`；JSON 内 **`tag`** 为 `thought` / `observe` / `check` / `final`（见 [`promptpile/promptpile-react/README.md`](../../promptpile/promptpile-react/README.md)）。成功响应的 `.res.json` 在 thinking 模型下可含 **`reasoning_content`** 字段。
 - **Thinking 历史**：Thought / Final 在 `continue=true` 时，若模型返回 `reasoning_content`，会在 **`messages/`** 写入同序号 **`[N]assistant.extra.json`**（与 `[N]assistant.md` / `.calls.jsonl` 并列），供下一轮请求回传，避免 DeepSeek 400。
 - **关闭 dump**：编辑 `run-example.bat`，注释掉 `set "PROMPTPILE_REACT_DEBUG=1"` 那一行。
 - **在 IDE 中查看**：[`.gitignore`](.gitignore) 已忽略 `*.req.json` / `*.res.json`，需在资源管理器打开本目录，或开启「显示 gitignore 忽略的文件」。
@@ -85,7 +85,7 @@ TOML 中 **`after_hook = "../after-hook-mcp-exec-calls.bat"`**（相对扫描目
 模型若产生 MCP **`tool_calls`**，**Thought** 结束后 **after-hook** 会尝试 **`exec-calls`**。仍可在网关运行时 **手动重试**：
 
 ```bat
-npx --prefix "..\..\packages\promptpile-mcp" promptpile-mcp exec-calls --base-url http://127.0.0.1:8765 --dir "%CD%\messages"
+npx --prefix "..\..\promptpile\promptpile-mcp" promptpile-mcp exec-calls --base-url http://127.0.0.1:8765 --dir "%CD%\messages"
 ```
 
 （若配置了 token，追加 **`--token`**，与 **`PROMPTPILE_MCP_TOKEN`** 相同。）
@@ -100,4 +100,4 @@ npx --prefix "..\..\packages\promptpile-mcp" promptpile-mcp exec-calls --base-ur
 | **`messages\.tools.toml`** | 由 **`promptpile-mcp export-tools`** 生成，勿手工伪造 |
 | **`after-hook-mcp-exec-calls.bat`** | **`promptpile`** after-hook：有 **`tool_calls`** 时 **`exec-calls`** |
 
-详见 **`packages/promptpile-react/README.md`** 与 **`packages/promptpile-mcp/README.md`**。
+详见 **`promptpile/promptpile-react/README.md`** 与 **`promptpile/promptpile-mcp/README.md`**。

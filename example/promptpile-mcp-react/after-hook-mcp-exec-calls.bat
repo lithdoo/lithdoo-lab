@@ -8,7 +8,7 @@ if not "%PROMPTPILE_HAS_TOOL_CALLS%"=="1" exit /b 0
 if "%PROMPTPILE_SCAN_DIRECTORY%"=="" exit /b 0
 
 set "HOOK_DIR=%~dp0"
-set "MCP_PREFIX=%HOOK_DIR%..\..\packages\promptpile-mcp"
+set "MCP_PREFIX=%HOOK_DIR%..\..\promptpile\promptpile-mcp"
 set "TOKEN_ARG="
 if not "%PROMPTPILE_MCP_TOKEN%"=="" set "TOKEN_ARG=--token %PROMPTPILE_MCP_TOKEN%"
 

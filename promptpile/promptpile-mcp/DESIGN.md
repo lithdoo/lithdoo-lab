@@ -2,7 +2,7 @@
 
 本文档描述 **promptpile-mcp** 的目标架构、CLI、HTTP API、`mcp.toml` 约定及与 **promptpile** 的衔接方式。实现以本文为准；[`README.md`](./README.md) 中的简略说明指向此处。
 
-**集成策略（选定）**：不改 [`packages/promptpile`](../promptpile/) 核心逻辑，通过 **常驻 HTTP 网关 + 预生成 `.tools.toml` + 离线执行 tool calls** 完成 MCP 集成（对应 README「方案 2」的演进形态：由「每次 spawn MCP」改为「网关进程持有 MCP 会话」，客户端命令仅通过 HTTP 与网关交互）。
+**集成策略（选定）**：不改 [`packages/promptpile`](../../packages/promptpile/) 核心逻辑，通过 **常驻 HTTP 网关 + 预生成 `.tools.toml` + 离线执行 tool calls** 完成 MCP 集成（对应 README「方案 2」的演进形态：由「每次 spawn MCP」改为「网关进程持有 MCP 会话」，客户端命令仅通过 HTTP 与网关交互）。
 
 ---
 
@@ -10,10 +10,10 @@
 
 | 组件 | 职责 |
 |------|------|
-| **promptpile** | 组装消息目录、`loadTools()`（仅显式 `.toml` / `TOOLS_FILE`），调用单次 `chat/completions`；**不执行**工具；工具轨迹见 **`[idx]assistant.calls.jsonl`**（continue）与 **`[idx]assistant.result.jsonl`**，以及 **`-o`** 主输出旁的 **`{basename}.calls.jsonl`**（见 [`after-hook.ts`](../promptpile/src/after-hook.ts)）。二者后缀同为 `.calls.jsonl`，通过文件名模式区分。 |
+| **promptpile** | 组装消息目录、`loadTools()`（仅显式 `.toml` / `TOOLS_FILE`），调用单次 `chat/completions`；**不执行**工具；工具轨迹见 **`[idx]assistant.calls.jsonl`**（continue）与 **`[idx]assistant.result.jsonl`**，以及 **`-o`** 主输出旁的 **`{basename}.calls.jsonl`**（见 [`after-hook.ts`](../../packages/promptpile/src/after-hook.ts)）。二者后缀同为 `.calls.jsonl`，通过文件名模式区分。 |
 | **promptpile-mcp** | 将 MCP `tools/list` 映射为 OpenAI function 形态；可选通过 MCP `tools/call` 执行模型产生的调用；**不修改 promptpile 源码**。 |
 
-**OpenAI 工具条目形状**（与 [`tools-loader.ts`](../promptpile/src/tools-loader.ts) 一致）：
+**OpenAI 工具条目形状**（与 [`tools-loader.ts`](../../packages/promptpile/src/tools-loader.ts) 一致）：
 
 ```json
 {

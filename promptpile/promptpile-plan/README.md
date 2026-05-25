@@ -19,7 +19,7 @@
 ## 开发与构建
 
 ```bash
-cd packages/promptpile-plan
+cd promptpile/promptpile-plan
 npm install
 npm run build
 ```
