@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 import { parseCli } from './cli';
 
-function main(): void {
-  parseCli();
-  process.stdout.write('day-loom: scaffold ready.\n');
-}
-
 try {
-  main();
+  parseCli();
 } catch (e) {
-  console.error('Error:', e);
+  console.error('Error:', e instanceof Error ? e.message : e);
   process.exitCode = 1;
 }
