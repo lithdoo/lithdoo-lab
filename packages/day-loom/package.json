@@ -1,0 +1,35 @@
+{
+  "name": "day-loom",
+  "version": "0.0.0",
+  "description": "day-loom: scaffold package",
+  "main": "dist/index.js",
+  "bin": {
+    "day-loom": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": [
+    "day-loom",
+    "command-line"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "dependencies": {
+    "@types/node": "^25.5.2",
+    "commander": "^14.0.3",
+    "typescript": "~5.9.3"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
+  }
+}
