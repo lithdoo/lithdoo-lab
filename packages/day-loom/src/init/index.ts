@@ -3,6 +3,7 @@ import { archiveTranscript } from './archive-transcript';
 import { applyPayload } from './apply-payload';
 import { cleanupSession } from './cleanup';
 import { DEFAULT_MAX_INTERVIEW_ROUNDS } from './constants';
+import { InitCancelledError } from './errors';
 import { finalizeWorld } from './finalize';
 import {
   assertApiKey,
@@ -58,12 +59,15 @@ export async function initWorldInteractive(
 
     return worldRoot;
   } catch (err) {
-    if (interviewSession && options.keepSessionOnError) {
+    const cancelledSession =
+      err instanceof InitCancelledError ? err.session : interviewSession;
+
+    if (cancelledSession && options.keepSessionOnError) {
       process.stderr.write(
-        `Init session preserved at: ${interviewSession.root}\n`
+        `Init session preserved at: ${cancelledSession.root}\n`
       );
-    } else if (interviewSession) {
-      cleanupSession(interviewSession);
+    } else if (cancelledSession) {
+      cleanupSession(cancelledSession);
     }
     throw err;
   }

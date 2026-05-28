@@ -24,3 +24,4 @@
 - `hostra-open-web/`：通过 `hostra` 的 JSON-RPC `openWindow` 打开本地网页
 - `hostra-web-editor/`：通过 `hostra` 打开 `web-editor-component` 编辑器窗口，并联动 `lsp-ws-server`
 - `hostra-file-view/`：通过 `hostra` 打开 `file-view-component` + icons UI，并联动 `file-view-ws-server`（静态页 `4174`，file-view 服务 `8081`）
+- `day-loom-init/`：`run-quick.bat` 验证 `day-loom init --quick`；`run-interactive.bat` 手跑 promptpile 访谈 init（需 `DEEPSEEK_API_KEY`）

@@ -10,6 +10,16 @@ const {
 const { isPayloadComplete } = require('../../dist/init/checklist.js');
 const { initWorldQuick } = require('../../dist/init/index.js');
 const { isInitialized } = require('../../dist/init/guard.js');
+const { InitCancelledError } = require('../../dist/init/errors.js');
+
+test('InitCancelledError carries optional session', () => {
+  const session = { root: '/tmp/x', messagesDir: '/tmp/x/messages', round: 1 };
+  const err = new InitCancelledError('cancelled', session);
+  assert.equal(err.name, 'InitCancelledError');
+  assert.equal(err.message, 'cancelled');
+  assert.equal(err.session, session);
+  assert.ok(err instanceof Error);
+});
 
 test('parseInterviewStatus reads init-status block', () => {
   const text = `好的，继续。

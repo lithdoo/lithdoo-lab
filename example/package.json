@@ -6,7 +6,9 @@
   "main": "index.js",
   "scripts": {
     "test": "node -e \"console.log('hostra-example: no automated tests yet')\"",
-    "list": "node -e \"console.log('Place examples under example/<package-name>/ and document in README.md')\""
+    "list": "node -e \"console.log('Place examples under example/<package-name>/ and document in README.md')\"",
+    "day-loom:quick": "cd day-loom-init && run-quick.bat",
+    "day-loom:verify-quick": "node day-loom-init/scripts/verify-world.js day-loom-init/output/world-quick --mode quick"
   },
   "keywords": [
     "hostra",

@@ -1,6 +1,7 @@
 import readline from 'readline';
+import { InitCancelledError } from './errors';
 
-export async function readUserInput(): Promise<string> {
+async function readMultilineInput(): Promise<string> {
   process.stdout.write(
     '\nEnter your reply. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).\n'
   );
@@ -16,9 +17,31 @@ export async function readUserInput(): Promise<string> {
   }
 
   rl.close();
-  const text = lines.join('\n').trim();
-  if (!text) {
-    throw new Error('Empty input. Nothing was written.');
+  return lines.join('\n');
+}
+
+function askExitOnEmpty(): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise(resolve => {
+    rl.question('Empty input. Exit? (Y/N): ', answer => {
+      rl.close();
+      resolve(/^y$/i.test(answer.trim()));
+    });
+  });
+}
+
+export async function readUserInput(): Promise<string> {
+  while (true) {
+    const text = (await readMultilineInput()).trim();
+    if (text) {
+      return text;
+    }
+    if (await askExitOnEmpty()) {
+      throw new InitCancelledError();
+    }
   }
-  return text;
 }

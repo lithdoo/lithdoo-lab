@@ -4,6 +4,7 @@ import {
   OPENING_ASSISTANT,
 } from './constants';
 import { isInterviewReady, getInterviewMissingFromTranscript } from './checklist';
+import { InitCancelledError } from './errors';
 import { parseInterviewStatus } from './parse-assistant';
 import { assertPromptpileOk, runPromptpile } from './promptpile-run';
 import { readUserInput } from './read-user-input';
@@ -17,7 +18,15 @@ import {
 import type { InitSession } from './types';
 
 async function runInterviewRound(session: InitSession): Promise<string> {
-  const userText = await readUserInput();
+  let userText: string;
+  try {
+    userText = await readUserInput();
+  } catch (err) {
+    if (err instanceof InitCancelledError) {
+      throw new InitCancelledError(err.message, session);
+    }
+    throw err;
+  }
   appendUserMessage(session.messagesDir, userText);
 
   const result = await runPromptpile(session, [

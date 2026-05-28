@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { InitCancelledError } from '../init/errors';
 import { initWorldInteractive, initWorldQuick } from '../init';
 
 export function registerInitCommand(program: Command): void {
@@ -38,6 +39,10 @@ export function registerInitCommand(program: Command): void {
 
         process.stdout.write(`Initialized World save: ${worldRoot}\n`);
       } catch (err) {
+        if (err instanceof InitCancelledError) {
+          process.stderr.write(`${err.message}\n`);
+          process.exit(0);
+        }
         console.error('Error:', err instanceof Error ? err.message : err);
         process.exit(1);
       }
