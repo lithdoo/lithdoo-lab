@@ -100,3 +100,4 @@ example/hostra-file-view/user-data/
 /example/hostra-command-terminal/user-data
 user-data
 /example/promptpile-mcp-launcher/.playwright-mcp
+/packages/tomlith/lib
