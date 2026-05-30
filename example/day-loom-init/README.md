@@ -79,7 +79,7 @@ node scripts\verify-world.js output\world-interactive --mode interactive
 |----|----------------------|----------------------------|
 | `manifest.yaml` | ✓ | ✓ |
 | `canon/*.md` | 空文件 | 有内容 |
-| `characters/` | 无 NPC 子目录 | ≥1 个 `char_*` + `profile.yaml` |
+| `characters/` | 无 NPC 子目录 | ≥1 个 `char_*` + `profile.md` |
 | `days/` | 空 | 空 |
 | `.loom/init-transcript/` | 无 | 有 |
 

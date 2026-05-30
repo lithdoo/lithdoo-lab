@@ -60,7 +60,7 @@ export function isPayloadComplete(payload: InitPayload): string[] {
       if (!SNAKE_CASE.test(c.id)) {
         missing.push(`characters.invalid_id:${c.id}`);
       }
-      if (!nonEmpty(c.profileYaml)) {
+      if (!nonEmpty(c.profileMd)) {
         missing.push(`characters.profile:${c.id}`);
       }
     }

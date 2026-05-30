@@ -192,9 +192,9 @@ function verifyInteractive(worldRoot, errors) {
     errors.push('interactive mode: expected at least one character directory');
   } else {
     for (const id of charDirs) {
-      const profilePath = path.join(charsDir, id, 'profile.yaml');
+      const profilePath = path.join(charsDir, id, 'profile.md');
       if (!fs.existsSync(profilePath) || !nonEmpty(readText(profilePath))) {
-        errors.push(`interactive mode: characters/${id}/profile.yaml missing or empty`);
+        errors.push(`interactive mode: characters/${id}/profile.md missing or empty`);
       }
     }
   }

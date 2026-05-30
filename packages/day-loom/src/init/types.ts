@@ -6,6 +6,11 @@ export interface InitOptions {
   keepSessionOnError?: boolean;
 }
 
+export interface EntityMeta {
+  status?: string;
+  tags?: string[];
+}
+
 export interface InitPayload {
   manifest: { id: string; title: string };
   canon: {
@@ -20,12 +25,14 @@ export interface InitPayload {
   };
   characters: Array<{
     id: string;
-    profileYaml: string;
-    relationshipsYaml?: string;
+    profileMd: string;
+    relationshipsMd?: string;
+    meta?: EntityMeta;
   }>;
   scenes?: Array<{
     id: string;
-    profileYaml: string;
+    profileMd: string;
+    meta?: EntityMeta;
   }>;
 }
 

@@ -130,15 +130,17 @@ days/
   characters/             # 人物现态（§6.1）
     index.yaml
     <char_id>/
-      profile.yaml
+      profile.md          # AI 语义上下文
+      relationships.md    # AI 语义上下文
+      meta.yaml           # 程序字段：id/type/status/tags
       memory.md           # 派生：从 days/ 压缩
-      relationships.yaml
       timeline.md         # 派生：按天索引，指向 days/
 
   scenes/                 # 场景现态（§6.2）
     index.yaml
     <scene_id>/
-      profile.yaml
+      profile.md          # AI 语义上下文
+      meta.yaml           # 程序字段：id/type/status/tags
       memory.md
       triggers.yaml
       timeline.md
@@ -146,7 +148,8 @@ days/
   arcs/                   # 剧情线现态（§6.3）
     index.yaml
     <arc_id>/
-      profile.yaml
+      profile.md
+      meta.yaml
       progress.yaml
       timeline.md
 
@@ -196,8 +199,9 @@ days/
 
 | 文件 | 内容 |
 |------|------|
-| `profile.yaml` | 基础信息、性格、当前情绪、目标 |
-| `relationships.yaml` | 与主角及他人关系（现态） |
+| `profile.md` | 角色语义设定：身份、性格、目标、秘密、口吻等 |
+| `relationships.md` | 与主角及其他角色的自然语言关系说明 |
+| `meta.yaml` | 程序字段：id、type、status、tags |
 | `memory.md` | 长期记忆（**派生**，从 `days/` 重算） |
 | `timeline.md` | **按天**事件索引（**派生**），条目应能对应到 `days/day_NNNN/` 及其 **`summary.md`** |
 
@@ -205,8 +209,9 @@ days/
 
 | 文件 | 内容 |
 |------|------|
-| `profile.yaml` | 描述、氛围、进入条件 |
-| `triggers.yaml` | 可触发事件 |
+| `profile.md` | 场景描述、氛围、进入条件、可互动元素 |
+| `meta.yaml` | 程序字段：id、type、status、tags |
+| `triggers.yaml` | 可触发事件索引 |
 | `memory.md` | 场景记忆（**派生**） |
 | `timeline.md` | **按天**场景事件索引（**派生**） |
 
@@ -214,7 +219,8 @@ days/
 
 | 文件 | 内容 |
 |------|------|
-| `profile.yaml` | 目标、冲突、参与人物 |
+| `profile.md` | 目标、冲突、参与人物的语义描述 |
+| `meta.yaml` | 程序字段：id、type、status、tags |
 | `progress.yaml` | 当前阶段、进度、下一触发点 |
 | `timeline.md` | **按天**剧情推进索引（**派生**） |
 
@@ -255,7 +261,7 @@ days/
 
 | 用途 | 格式 |
 |------|------|
-| 结构化状态、索引、补丁 | **YAML** |
+| 结构化状态、索引、补丁、短机器字段 | **YAML** |
 | 设定、日记、记忆、时间线 | **Markdown** |
 | 状态变更流水 | **JSONL** |
 

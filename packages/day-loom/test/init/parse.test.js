@@ -34,7 +34,7 @@ test('parseInterviewStatus reads init-status block', () => {
 
 test('parseInitPayload reads init-payload block', () => {
   const text = `\`\`\`init-payload
-{"manifest":{"id":"test_world","title":"Test"},"canon":{"premise.md":"p","rules.md":"r","style.md":"s","user_role.md":"u"},"state":{"world.yaml":"title: Test\\n"},"characters":[{"id":"char_a","profileYaml":"name: A\\n"}]}
+{"manifest":{"id":"test_world","title":"Test"},"canon":{"premise.md":"p","rules.md":"r","style.md":"s","user_role.md":"u"},"state":{"world.yaml":"title: Test\\n"},"characters":[{"id":"char_a","profileMd":"# A\\n\\nA character.\\n"}]}
 \`\`\``;
   const payload = parseInitPayload(text);
   assert.equal(payload.manifest.id, 'test_world');
@@ -50,7 +50,7 @@ test('isPayloadComplete detects missing canon', () => {
       'user_role.md': 'u',
     },
     state: { 'world.yaml': 'title: W\n' },
-    characters: [{ id: 'char_a', profileYaml: 'name: A\n' }],
+    characters: [{ id: 'char_a', profileMd: '# A\n\nA character.\n' }],
   });
   assert.ok(missing.includes('canon.premise'));
 });

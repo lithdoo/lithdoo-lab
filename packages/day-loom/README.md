@@ -353,6 +353,8 @@ day-loom 中至少需要三类记忆：
 
 day-loom 使用文件系统作为状态存储。
 
+面向 AI 的人物、场景和剧情线语义上下文使用 Markdown；YAML 只保留索引、状态、补丁和少量机器可读元数据。
+
 推荐目录结构如下：
 
 ```text
@@ -376,20 +378,23 @@ world_0001/
   characters/
     index.yaml
     char_main/
-      profile.yaml
+      profile.md
+      relationships.md
+      meta.yaml
       memory.md
-      relationships.yaml
       timeline.md
     char_lin_yu/
-      profile.yaml
+      profile.md
+      relationships.md
+      meta.yaml
       memory.md
-      relationships.yaml
       timeline.md
 
   scenes/
     index.yaml
     school_library/
-      profile.yaml
+      profile.md
+      meta.yaml
       memory.md
       triggers.yaml
       timeline.md
@@ -397,7 +402,8 @@ world_0001/
   arcs/
     index.yaml
     exam_arc/
-      profile.yaml
+      profile.md
+      meta.yaml
       progress.yaml
       timeline.md
 
