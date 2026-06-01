@@ -7,8 +7,9 @@
   "scripts": {
     "test": "node -e \"console.log('hostra-example: no automated tests yet')\"",
     "list": "node -e \"console.log('Place examples under example/<package-name>/ and document in README.md')\"",
-    "day-loom:quick": "cd day-loom-init && run-quick.bat",
-    "day-loom:verify-quick": "node day-loom-init/scripts/verify-world.js day-loom-init/output/world-quick --mode quick"
+    "day-loom:quick": "cd day-loom-init-revise && run-quick.bat",
+    "day-loom:verify-quick": "node day-loom-init-revise/scripts/verify-world.js day-loom-init-revise/output/world-quick --mode quick",
+    "day-loom:revise-smoke": "cd day-loom-init-revise && run-revise-smoke.bat"
   },
   "keywords": [
     "hostra",

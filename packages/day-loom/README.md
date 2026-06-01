@@ -1031,3 +1031,45 @@ day-loom 的核心不是聊天，不是日记，也不是单纯的游戏。
 最终形态可以概括为：
 
 > day-loom 是一个以日记为存档格式的人生模拟器。
+
+---
+
+## revise：AI 辅助维护 World 设定
+
+`revise` 默认启动多轮 AI 对话。AI 通过只读 MCP 工具检索当前 World；只有用户输入 `/apply` 并确认 diff 后，Day Loom 才会备份并写盘。
+
+```bash
+day-loom revise -d ./path/to/world
+```
+
+会话命令：
+
+```text
+/pending   查看待修改意图
+/apply     生成最终提案并确认应用
+/cancel    放弃并退出
+/exit      保留 session 草稿并退出
+```
+
+交互模式需要：
+
+- `DEEPSEEK_API_KEY`
+- 可用的 `promptpile-mcp` CLI。可设置 `PROMPTPILE_MCP_BIN`，或先在仓库的 `promptpile/promptpile-mcp/` 中安装依赖并构建。
+- 默认 MCP Server 使用 `npx -y @modelcontextprotocol/server-filesystem <world_root>`。也可设置 `DAY_LOOM_FILESYSTEM_MCP_BIN` 指向已安装包的 `dist/index.js`，避免每次通过 `npx` 解析。
+
+也可以连接已运行的网关：
+
+```bash
+day-loom revise \
+  -d ./path/to/world \
+  --mcp-base-url http://127.0.0.1:8765
+```
+
+自动化测试可绕过 AI：
+
+```bash
+day-loom revise \
+  -d ./path/to/world \
+  --proposal ./proposal.json \
+  --dry-run
+```

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { registerInitCommand } from './init';
+import { registerReviseCommand } from './revise';
 
 export function parseCli(argv: string[] = process.argv): void {
   const program = new Command();
@@ -10,6 +11,7 @@ export function parseCli(argv: string[] = process.argv): void {
     .helpOption('-h, --help', '显示帮助');
 
   registerInitCommand(program);
+  registerReviseCommand(program);
 
   program.parse(argv);
 }
