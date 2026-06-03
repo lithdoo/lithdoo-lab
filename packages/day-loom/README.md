@@ -1073,3 +1073,42 @@ day-loom revise \
   --proposal ./proposal.json \
   --dry-run
 ```
+
+---
+
+## daily：主角视角的当日计划
+
+`daily` 用于制定当前 day 的初步计划。它会通过主角视角投影目录回答用户问题和收集今日意图；AI 不能读取完整 World，只能读取投影后的公开/已知信息。
+
+```bash
+day-loom daily -d ./path/to/world
+```
+
+会话命令：
+
+```text
+/pending   查看当前计划草稿
+/start     生成初步 DailyPlan 并写入 days/day_NNNN/
+/cancel    放弃并退出
+/exit      保留 session 草稿并退出
+```
+
+`/start` 成功后会写入：
+
+```text
+days/day_NNNN/meta.yaml
+days/day_NNNN/plan.user.md
+days/day_NNNN/plan.initial.json
+days/day_NNNN/dialogue/plan-transcript.md
+```
+
+自动化测试可使用 proposal 模式，不依赖 AI 或 MCP：
+
+```bash
+day-loom daily \
+  -d ./path/to/world \
+  --proposal ./daily-plan.json \
+  --dry-run
+```
+
+第一版只生成方向性 `planned_beats`，不会生成具体事件、日记，也不会修改人物或场景记忆。

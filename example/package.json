@@ -9,7 +9,8 @@
     "list": "node -e \"console.log('Place examples under example/<package-name>/ and document in README.md')\"",
     "day-loom:quick": "cd day-loom-init-revise && run-quick.bat",
     "day-loom:verify-quick": "node day-loom-init-revise/scripts/verify-world.js day-loom-init-revise/output/world-quick --mode quick",
-    "day-loom:revise-smoke": "cd day-loom-init-revise && run-revise-smoke.bat"
+    "day-loom:revise-smoke": "cd day-loom-init-revise && run-revise-smoke.bat",
+    "day-loom:daily-interactive": "cd day-loom-daily && run-interactive.bat"
   },
   "keywords": [
     "hostra",
