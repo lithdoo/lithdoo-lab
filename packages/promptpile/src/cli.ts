@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { parseExtraBodyInput } from './llm-extra-body';
 import { parseTemperatureInput } from './llm-sampling';
+import { parseOutputPileFd, parseOutputPileFormat } from './output-pile';
 import { Config } from './types';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
@@ -30,6 +31,11 @@ const buildProgram = (): Command => {
       'Extra JSON object merged into Chat Completions request body; overrides llm_api_extra_body / [[llm_api]] profile'
     )
     .option('-o, --output <path>', 'Output file path for AI response')
+    .option('--output-pile-file <path>', 'Write streamed assistant output to this file/pipe path')
+    .option('--output-pile-fd <fd>', 'Write streamed assistant output to an inherited file descriptor')
+    .option('--output-pile-format <format>', 'Output pile format: text | json (default: text)')
+    .option('--output-pipe <path>', 'Deprecated alias of --output-pile-file')
+    .option('--output-pipe-format <format>', 'Deprecated alias of --output-pile-format')
     .option('-q, --quiet', 'Disable normal stdout logs and response output')
     .option('-i, --input', 'Read user input from terminal and append as next user message')
     .option('-c, --continue', 'Append assistant reply to next message file')
@@ -70,6 +76,11 @@ export const parseCli = (argv: string[]): CliParseResult => {
     apiKey?: string;
     apiBaseUrl?: string;
     output?: string;
+    outputPileFile?: string;
+    outputPileFd?: string;
+    outputPileFormat?: string;
+    outputPipe?: string;
+    outputPipeFormat?: string;
     quiet?: boolean;
     continue?: boolean;
     input?: boolean;
@@ -82,6 +93,17 @@ export const parseCli = (argv: string[]): CliParseResult => {
     extraBody?: string;
     disableTool?: boolean;
   };
+
+  const trimOpt = (value: string | undefined): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  };
+  const outputPileFile = trimOpt(options.outputPileFile) ?? trimOpt(options.outputPipe);
+  const outputPileFd = parseOutputPileFd(options.outputPileFd);
+  const outputPileFormat = parseOutputPileFormat(
+    options.outputPileFormat ?? options.outputPipeFormat
+  );
 
   const rawConfig = options.config as string | undefined;
   let configPath: string | undefined;
@@ -131,6 +153,9 @@ export const parseCli = (argv: string[]): CliParseResult => {
       apiKey: options.apiKey,
       apiBaseUrl: options.apiBaseUrl,
       output: options.output,
+      outputPileFile,
+      outputPileFd,
+      outputPileFormat,
       quiet: options.quiet as boolean | undefined,
       continueMode: options.continue === true ? true : undefined,
       inputMode: options.input === true ? true : undefined,

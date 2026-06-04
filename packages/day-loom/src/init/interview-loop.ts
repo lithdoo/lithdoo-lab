@@ -17,7 +17,7 @@ import {
 } from './session';
 import type { InitSession } from './types';
 
-async function runInterviewRound(session: InitSession): Promise<string> {
+async function runInterviewRound(session: InitSession, onDelta?: (text: string) => void): Promise<string> {
   let userText: string;
   try {
     userText = await readUserInput();
@@ -36,7 +36,7 @@ async function runInterviewRound(session: InitSession): Promise<string> {
     'messages',
     '--continue',
     '--disable-tool',
-  ]);
+  ], { onDelta });
 
   assertPromptpileOk(result, 'Interview round');
   return getLatestAssistantText(session.messagesDir);
@@ -54,10 +54,10 @@ export async function runInterviewLoop(
 
   for (let round = 1; round <= maxRounds; round += 1) {
     session.round = round;
-    const assistantText = await runInterviewRound(session);
-    const display = stripDisplay(assistantText);
     process.stdout.write('\n--- Assistant ---\n\n');
-    process.stdout.write(display);
+    const displayStream = createInitDisplayStream();
+    const assistantText = await runInterviewRound(session, text => displayStream.push(text));
+    displayStream.flush();
     process.stdout.write('\n');
 
     const status = parseInterviewStatus(assistantText);
@@ -86,4 +86,45 @@ export async function runInterviewLoop(
 
 function stripDisplay(text: string): string {
   return text.replace(/```(?:json\s+)?init-status\s*\n[\s\S]*?```/gi, '').trim();
+}
+
+function createInitDisplayStream(): { push(text: string): void; flush(): void } {
+  let buffer = '';
+  let suppressBlock = false;
+
+  const handleLine = (line: string, hasNewline: boolean): void => {
+    const trimmed = line.trim();
+    if (suppressBlock) {
+      if (trimmed.startsWith('```')) {
+        suppressBlock = false;
+      }
+      return;
+    }
+    if (/^```.*(?:init-status|init-payload)/i.test(trimmed)) {
+      suppressBlock = true;
+      return;
+    }
+    process.stdout.write(line);
+    if (hasNewline) {
+      process.stdout.write('\n');
+    }
+  };
+
+  return {
+    push(text: string): void {
+      buffer += text;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        handleLine(line, true);
+      }
+    },
+    flush(): void {
+      if (buffer !== '') {
+        const line = buffer;
+        buffer = '';
+        handleLine(line, false);
+      }
+    }
+  };
 }

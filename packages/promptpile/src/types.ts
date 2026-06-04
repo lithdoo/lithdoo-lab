@@ -74,6 +74,12 @@ export interface Config {
   continueMode: boolean;
   inputMode: boolean;
   output?: string;
+  /** Optional file/pipe path that receives streamed assistant output even when quiet is true. */
+  outputPileFile?: string;
+  /** Optional inherited fd that receives streamed assistant output even when quiet is true. */
+  outputPileFd?: number;
+  /** Stream output format for output pile; defaults to text when unset. */
+  outputPileFormat?: 'text' | 'json';
   quiet: boolean;
   /** CLI `--tools-file`: relative to cwd when relative. */
   toolsFileCli?: string;

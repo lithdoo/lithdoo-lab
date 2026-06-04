@@ -1,9 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { createPromptpileStreamConsumer } from '../shared/promptpile-stream';
+import { runProcess } from '../revise/process-run';
 import type { InitSession } from './types';
 
-const STDERR_CAP = 32 * 1024;
+const OUTPUT_PILE_FD = 3;
 
 export type PromptpileSpawnConfig = {
   command: string;
@@ -31,7 +32,7 @@ export function getPromptpileSpawnConfig(): PromptpileSpawnConfig {
     return {
       command: process.execPath,
       argvPrefix: [bundled],
-      displayName: `node "${bundled}"`,
+      displayName: 'node "' + bundled + '"',
     };
   }
   return { command: 'promptpile', argvPrefix: [], displayName: 'promptpile' };
@@ -41,56 +42,50 @@ export type PromptpileRunResult = {
   status: number | null;
   stdout: string;
   stderr: string;
-  error?: NodeJS.ErrnoException;
+  error?: Error;
 };
 
 export async function runPromptpile(
   session: InitSession,
   cliArgs: string[],
-  options: { quiet?: boolean } = {}
+  options: { quiet?: boolean; onDelta?: (text: string) => void } = {}
 ): Promise<PromptpileRunResult> {
   const spawnConfig = getPromptpileSpawnConfig();
-  const cwd = session.root;
-  const argv = [...spawnConfig.argvPrefix, ...cliArgs];
-  const quiet = options.quiet ?? true;
-  let stderr = '';
-
-  return new Promise(resolve => {
-    const child = spawn(spawnConfig.command, argv, {
-      cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      const s = chunk.toString();
-      stdout += s;
-      if (!quiet) {
-        process.stdout.write(s);
-      }
-    });
-
-    child.stderr?.on('data', (chunk: Buffer) => {
-      const s = chunk.toString();
-      stderr += s;
-      if (stderr.length > STDERR_CAP) {
-        stderr = stderr.slice(-STDERR_CAP);
-      }
-      if (!quiet) {
-        process.stderr.write(s);
-      }
-    });
-
-    child.on('error', error => {
-      resolve({ status: null, stdout, stderr, error });
-    });
-
-    child.on('close', status => {
-      resolve({ status, stdout, stderr });
-    });
+  const consumer = createPromptpileStreamConsumer({
+    onDelta: text => options.onDelta?.(text),
+    onError: message => {
+      throw new Error('promptpile stream error: ' + message);
+    }
   });
+
+  const result = await runProcess(
+    spawnConfig.command,
+    [
+      ...spawnConfig.argvPrefix,
+      ...cliArgs,
+      '--quiet',
+      '--output-pile-fd',
+      String(OUTPUT_PILE_FD),
+      '--output-pile-format',
+      'json'
+    ],
+    {
+      cwd: session.root,
+      quiet: options.quiet ?? true,
+      outputPile: {
+        fd: OUTPUT_PILE_FD,
+        onData: chunk => consumer.push(chunk)
+      }
+    }
+  );
+
+  try {
+    consumer.flush();
+  } catch (e) {
+    return { ...result, error: e instanceof Error ? e : new Error(String(e)) };
+  }
+
+  return result;
 }
 
 export function assertPromptpileOk(
@@ -99,14 +94,14 @@ export function assertPromptpileOk(
 ): void {
   if (result.error) {
     throw new Error(
-      `${context}: failed to start promptpile (${result.error.message}). ` +
-        `Check ${getPromptpileSpawnConfig().displayName} is available.`
+      context + ': failed to run promptpile (' + result.error.message + '). ' +
+        'Check ' + getPromptpileSpawnConfig().displayName + ' is available.'
     );
   }
   if (result.status !== 0) {
     const tail = result.stderr.trim().slice(-500);
     throw new Error(
-      `${context}: promptpile exited with code ${result.status}${tail ? `: ${tail}` : ''}`
+      context + ': promptpile exited with code ' + result.status + (tail ? ': ' + tail : '')
     );
   }
 }

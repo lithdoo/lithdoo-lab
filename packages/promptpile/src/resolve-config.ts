@@ -11,6 +11,7 @@ import {
   DEFAULT_TEMPERATURE,
   parseTemperatureInput
 } from './llm-sampling';
+import { parseOutputPileFd, parseOutputPileFormat, type OutputPileFormat } from './output-pile';
 
 /** Pre-merge shape: booleans use undefined = “本层未写”. */
 interface FlatLayer {
@@ -20,6 +21,9 @@ interface FlatLayer {
   apiKeyEnvName?: string;
   apiBaseUrl?: string;
   output?: string;
+  outputPileFile?: string;
+  outputPileFd?: number;
+  outputPileFormat?: OutputPileFormat;
   quiet?: boolean;
   continueMode?: boolean;
   inputMode?: boolean;
@@ -105,6 +109,14 @@ const mapProcessEnv = (): FlatLayer => {
   if (o !== undefined) {
     out.output = o;
   }
+  const op = trimEnv(e.PROMPTPILE_OUTPUT_PILE_FILE) ?? trimEnv(e.PROMPTPILE_OUTPUT_PIPE);
+  if (op !== undefined) {
+    out.outputPileFile = op;
+  }
+  out.outputPileFd = parseOutputPileFd(trimEnv(e.PROMPTPILE_OUTPUT_PILE_FD));
+  out.outputPileFormat = parseOutputPileFormat(
+    trimEnv(e.PROMPTPILE_OUTPUT_PILE_FORMAT) ?? trimEnv(e.PROMPTPILE_OUTPUT_PIPE_FORMAT)
+  );
   const q = envBool(e.QUIET);
   if (q !== undefined) {
     out.quiet = q;
@@ -180,6 +192,14 @@ const mapDotEnvRecord = (r: Record<string, string>): FlatLayer => {
   if (o !== undefined) {
     out.output = o;
   }
+  const op = get('PROMPTPILE_OUTPUT_PILE_FILE') ?? get('PROMPTPILE_OUTPUT_PIPE');
+  if (op !== undefined) {
+    out.outputPileFile = op;
+  }
+  out.outputPileFd = parseOutputPileFd(get('PROMPTPILE_OUTPUT_PILE_FD'));
+  out.outputPileFormat = parseOutputPileFormat(
+    get('PROMPTPILE_OUTPUT_PILE_FORMAT') ?? get('PROMPTPILE_OUTPUT_PIPE_FORMAT')
+  );
   const q = envBool(r.QUIET);
   if (q !== undefined) {
     out.quiet = q;
@@ -241,6 +261,12 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
       out.output = t;
     }
   }
+  const outputPileFile = getStr(p, 'output_pile_file') ?? getStr(p, 'output_pipe');
+  if (outputPileFile !== undefined) {
+    out.outputPileFile = outputPileFile;
+  }
+  out.outputPileFd = parseOutputPileFd(p.output_pile_fd);
+  out.outputPileFormat = parseOutputPileFormat(p.output_pile_format ?? p.output_pipe_format);
   const qb = getBool(p, 'quiet');
   if (qb !== undefined) {
     out.quiet = qb;
@@ -369,6 +395,21 @@ const pickNum = (
   return fallback;
 };
 
+const pickOptNum = (
+  cli: number | undefined,
+  toml: number | undefined,
+  scan: number | undefined,
+  cwd: number | undefined,
+  proc: number | undefined
+): number | undefined => {
+  if (cli !== undefined) return cli;
+  if (toml !== undefined) return toml;
+  if (scan !== undefined) return scan;
+  if (cwd !== undefined) return cwd;
+  if (proc !== undefined) return proc;
+  return undefined;
+};
+
 const pickRecord = (
   cli: ExtraBody | undefined,
   toml: ExtraBody | undefined,
@@ -426,6 +467,9 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   apiKey: trim(cli.apiKey),
   apiBaseUrl: trim(cli.apiBaseUrl),
   output: trim(cli.output),
+  outputPileFile: trim(cli.outputPileFile),
+  outputPileFd: cli.outputPileFd,
+  outputPileFormat: cli.outputPileFormat,
   quiet: cli.quiet,
   continueMode: cli.continueMode,
   inputMode: cli.inputMode,
@@ -558,6 +602,30 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     procLayer.output
   );
 
+  const outputPileFile = pickOptStr(
+    cliLayer.outputPileFile,
+    tomlLayer.outputPileFile,
+    scanLayer.outputPileFile,
+    cwdLayer.outputPileFile,
+    procLayer.outputPileFile
+  );
+
+  const outputPileFd = pickOptNum(
+    cliLayer.outputPileFd,
+    tomlLayer.outputPileFd,
+    scanLayer.outputPileFd,
+    cwdLayer.outputPileFd,
+    procLayer.outputPileFd
+  );
+
+  const outputPileFormat = pickOptStr(
+    cliLayer.outputPileFormat,
+    tomlLayer.outputPileFormat,
+    scanLayer.outputPileFormat,
+    cwdLayer.outputPileFormat,
+    procLayer.outputPileFormat
+  ) as OutputPileFormat | undefined;
+
   const quiet = pickBool(
     cliLayer.quiet,
     tomlLayer.quiet,
@@ -661,6 +729,9 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     continueMode,
     inputMode,
     output,
+    outputPileFile,
+    outputPileFd,
+    outputPileFormat,
     quiet,
     toolsFileCli: cliPartial.toolsFileCli,
     toolsFileEnv,

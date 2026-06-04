@@ -98,6 +98,64 @@ try {
     '{"c":3}'
   ]);
   assert.deepStrictEqual(cfgCliExtra.extraBody, { c: 3 }, 'cli --extra-body overrides env');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\noutput_pile_file = "toml-new.jsonl"\noutput_pipe = "toml-old.jsonl"\noutput_pile_fd = 3\noutput_pile_format = "json"\n'
+  );
+  fs.writeFileSync(
+    path.join(msgAbs, '.env'),
+    'PROMPTPILE_OUTPUT_PILE_FILE=scan-new.txt\nPROMPTPILE_OUTPUT_PIPE=scan-old.txt\nPROMPTPILE_OUTPUT_PILE_FD=5\nPROMPTPILE_OUTPUT_PILE_FORMAT=text\n'
+  );
+  const cfgTomlPile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.strictEqual(cfgTomlPile.outputPileFile, 'toml-new.jsonl', 'toml output_pile_file overrides scan env and old toml alias');
+  assert.strictEqual(cfgTomlPile.outputPileFd, 3, 'toml output_pile_fd');
+  assert.strictEqual(cfgTomlPile.outputPileFormat, 'json', 'toml output_pile_format');
+
+  fs.writeFileSync(tomlPath, '[promptpile]\noutput_pipe = "toml-old-only.jsonl"\noutput_pipe_format = "json"\n');
+  const cfgOldTomlPile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.strictEqual(cfgOldTomlPile.outputPileFile, 'toml-old-only.jsonl', 'old toml output_pipe alias');
+  assert.strictEqual(cfgOldTomlPile.outputPileFormat, 'json', 'old toml output_pipe_format alias');
+
+  fs.writeFileSync(tomlPath, '[promptpile]\n');
+  const cfgScanPile = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.strictEqual(cfgScanPile.outputPileFile, 'scan-new.txt', 'scan env output pile file when toml unset');
+  assert.strictEqual(cfgScanPile.outputPileFd, 5, 'scan env output pile fd');
+  assert.strictEqual(cfgScanPile.outputPileFormat, 'text', 'scan env output pile format');
+
+  fs.writeFileSync(path.join(msgAbs, '.env'), 'PROMPTPILE_OUTPUT_PIPE=scan-old-only.txt\nPROMPTPILE_OUTPUT_PIPE_FORMAT=json\n');
+  const cfgOldScanPile = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.strictEqual(cfgOldScanPile.outputPileFile, 'scan-old-only.txt', 'old env output pipe alias');
+  assert.strictEqual(cfgOldScanPile.outputPileFormat, 'json', 'old env output pipe format alias');
+
+  const cfgCliPile = resolveConfig(tmp, [
+    'node',
+    fakeScript,
+    '-k',
+    'key',
+    '--output-pile-file',
+    'cli-stream.jsonl',
+    '--output-pile-fd',
+    '4',
+    '--output-pile-format',
+    'text'
+  ]);
+  assert.strictEqual(cfgCliPile.outputPileFile, 'cli-stream.jsonl', 'cli output pile file overrides env');
+  assert.strictEqual(cfgCliPile.outputPileFd, 4, 'cli output pile fd overrides env');
+  assert.strictEqual(cfgCliPile.outputPileFormat, 'text', 'cli output pile format');
+
+  const cfgCliAliasPile = resolveConfig(tmp, [
+    'node',
+    fakeScript,
+    '-k',
+    'key',
+    '--output-pipe',
+    'cli-alias.jsonl',
+    '--output-pipe-format',
+    'json'
+  ]);
+  assert.strictEqual(cfgCliAliasPile.outputPileFile, 'cli-alias.jsonl', 'old cli output-pipe alias');
+  assert.strictEqual(cfgCliAliasPile.outputPileFormat, 'json', 'old cli output-pipe-format alias');
 } finally {
   process.chdir(prevCwd);
   if (hadModel) {

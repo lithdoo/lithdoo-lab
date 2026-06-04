@@ -19,6 +19,7 @@ import {
   loadSidecarMessages
 } from './message-sidecar-files';
 import { isPromptpileDiagnostic } from './diagnostic-log';
+import { createOutputPileWriter } from './output-pile';
 import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
@@ -190,24 +191,39 @@ async function main(): Promise<void> {
     let toolCalls: ToolCall[] | undefined;
     let reasoningContent: string | undefined;
 
-    const result = await callAIStream(
-      config.apiKey,
-      config.apiBaseUrl,
-      config.model,
-      messages,
-      tools,
-      toolChoiceForApi,
-      config.temperature,
-      (chunk) => {
-        if (!quiet) {
-          process.stdout.write(chunk);
-        }
-      },
-      config.extraBody
-    );
-    response = result.content;
-    toolCalls = result.toolCalls;
-    reasoningContent = result.reasoningContent;
+    const outputPile = createOutputPileWriter({
+      pileFile: config.outputPileFile,
+      pileFd: config.outputPileFd,
+      format: config.outputPileFormat
+    });
+
+    try {
+      const result = await callAIStream(
+        config.apiKey,
+        config.apiBaseUrl,
+        config.model,
+        messages,
+        tools,
+        toolChoiceForApi,
+        config.temperature,
+        (chunk) => {
+          outputPile.writeDelta(chunk);
+          if (!quiet) {
+            process.stdout.write(chunk);
+          }
+        },
+        config.extraBody
+      );
+      response = result.content;
+      toolCalls = result.toolCalls;
+      reasoningContent = result.reasoningContent;
+      outputPile.writeDone();
+    } catch (e) {
+      outputPile.writeError(e);
+      throw e;
+    } finally {
+      await outputPile.close();
+    }
 
     if (resolvedOutput) {
       fs.writeFileSync(resolvedOutput, response, 'utf8');

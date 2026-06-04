@@ -322,6 +322,10 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `AI_API_KEY` | API 密钥 | 空（必填，否则退出） |
 | `AI_API_BASE_URL` | API 根地址 | `https://api.openai.com/v1` |
 | `OUTPUT_FILE` | 将模型回复写入文件路径 | 空（默认不写文件） |
+| `PROMPTPILE_OUTPUT_PILE_FILE` | 将流式 assistant 正文旁路写入文件/命名管道路径；不受 `QUIET` 影响 | 空 |
+| `PROMPTPILE_OUTPUT_PILE_FD` | 将流式 assistant 正文旁路写入继承 fd（整数，须 `>= 3`）；优先于 `PROMPTPILE_OUTPUT_PILE_FILE` | 空 |
+| `PROMPTPILE_OUTPUT_PILE_FORMAT` | 旁路输出格式：`text` 或 `json` | `text` |
+| `PROMPTPILE_OUTPUT_PIPE` / `PROMPTPILE_OUTPUT_PIPE_FORMAT` | 旧名兼容；分别等价 `PROMPTPILE_OUTPUT_PILE_FILE` / `PROMPTPILE_OUTPUT_PILE_FORMAT`，新名优先 | 空 |
 | `QUIET` | 静默（`1/true/yes/on` 为真，`0/false` 等为假） | 关闭 |
 | `PROMPTPILE_CONTINUE` | 等价 `--continue` | 关闭 |
 | `PROMPTPILE_INPUT` | 等价 `--input` | 关闭 |
@@ -339,7 +343,7 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 
 ### TOML（`--config`）
 
-- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`output`（路径字符串）、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。
+- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`output`（路径字符串）、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
 - **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `llm_api` 选择 profile 后再应用 `llm_api_*` 覆盖。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。
 
@@ -355,7 +359,11 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 | `--temperature <n>` | 采样温度（`0`–`2`）；覆盖 `llm_api_temperature` / profile | `0.8` |
 | `--extra-body <json>` | 额外请求体字段（JSON 对象）；覆盖 `llm_api_extra_body` / profile | 无 |
 | `-o, --output <path>` | 输出文件路径（保存模型回复） | 无 |
-| `-q, --quiet` | 静默模式：不打印过程日志、流式正文、工具调用行；**仍会**写入 `-o` 主文件与 `.calls.jsonl` / `.extra.json`（若存在） | 关闭 |
+| `--output-pile-file <path>` | 将流式 assistant 正文旁路写入文件/命名管道路径；不受 `--quiet` 影响 | 无 |
+| `--output-pile-fd <fd>` | 将流式 assistant 正文旁路写入继承 fd（整数，须 `>= 3`）；优先于 `--output-pile-file` | 无 |
+| `--output-pile-format <text\|json>` | 旁路输出格式；`text` 写纯 chunk，`json` 写 JSONL 事件 | `text` |
+| `--output-pipe <path>` / `--output-pipe-format <format>` | 旧名兼容；分别等价 `--output-pile-file` / `--output-pile-format` | 无 |
+| `-q, --quiet` | 静默模式：不打印过程日志、流式正文、工具调用行；**仍会**写入 `-o` 主文件与 `.calls.jsonl` / `.extra.json`（若存在），也不会关闭 output pile | 关闭 |
 | `-i, --input` | 在终端读取输入并保存为下一条 `user` 消息后再执行 | 关闭 |
 | `-c, --continue` | 将本次 assistant 输出追加为下一条消息文件：有正文则写 `[N]assistant.md`；含 `tool_calls` 则写 `[N]assistant.calls.jsonl`；含 `reasoning_content` 则写 `[N]assistant.extra.json`；三者**可共存**于同一 `N`，下一轮拼请求时会合并为一条 assistant 消息；三者皆无时不写文件 | 关闭 |
 | `--tools-file <path>` | 工具定义 **`.toml`**（可含 `extends`）；**相对路径相对当前工作目录**；未设置且未 `TOOLS_FILE` / `PROMPTPILE_TOOLS_FILE` 且未 `--disable-tool` 时报错 | 无 |
@@ -494,6 +502,37 @@ node dist/index.js -d ./messages --tools-file ./my-tools.toml -m gpt-4o -o ./out
 ## 输出格式
 
 控制台输出固定为 **流式纯文本**：将模型 **正文** 逐块写入标准输出（`--quiet` 时关闭）。若存在 **工具调用**，在流结束后将每条调用以 **一行一个 JSON 对象** 写入 stdout（`--quiet` 时关闭）。若指定 **`-o`**，主回复写入该文件，工具调用写入 **`{basename}.calls.jsonl`**（与是否 quiet 无关）。需要结构化结果时请读 **`-o` 主文件**、**`.calls.jsonl`** 或 **`--continue` 落盘的 `[N]assistant.*`**，而非解析整段 stdout JSON（已不再支持 `-f json` / `PROMPTPILE_FORMAT`）。
+
+### 流式旁路输出（output pile）
+
+`output pile` 用于把模型正文 chunk 复制到 stdout 之外的独立通道，适合上层程序在 `--quiet` 模式下做实时 UI。
+
+```bash
+node dist/index.js -d ./messages --quiet \
+  --output-pile-file ./outputs/stream.jsonl \
+  --output-pile-format json
+```
+
+TOML 示例：
+
+```toml
+[promptpile]
+output_pile_file = "./outputs/stream.jsonl"
+output_pile_fd = 3
+output_pile_format = "json"
+```
+
+当同时设置 `output_pile_fd` 与 `output_pile_file` 时，优先写 fd。fd 适合由父进程通过 `spawn(..., { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] })` 传入。
+
+`text` 格式只写正文 chunk；`json` 格式写 JSONL 事件：
+
+```jsonl
+{"type":"assistant_delta","content":"..."}
+{"type":"assistant_done"}
+{"type":"error","message":"..."}
+```
+
+旧名 `--output-pipe` / `PROMPTPILE_OUTPUT_PIPE` / `output_pipe` 仍可用作兼容别名，但新配置优先。
 
 ---
 
