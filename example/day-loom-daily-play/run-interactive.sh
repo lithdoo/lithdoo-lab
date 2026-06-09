@@ -48,9 +48,12 @@ fi
 
 PHASE=$(awk '/^phase:/ {print $2}' "$OUT_DIR/current.yaml")
 if [[ "$PHASE" != "idle" ]]; then
-  echo "[ERROR] Target World is not idle: $PHASE" >&2
-  echo "To rerun daily, delete:" >&2
-  echo "  $OUT_DIR" >&2
+  echo "[ERROR] Daily requires an idle World, got: $PHASE" >&2
+  if [[ "$PHASE" == "planned" || "$PHASE" == "playing" ]]; then
+    echo "Continue with: ./run-play-interactive.sh" >&2
+  else
+    echo "To restart from daily, delete: $OUT_DIR" >&2
+  fi
   exit 1
 fi
 

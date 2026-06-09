@@ -35,7 +35,7 @@ if [[ -z "${PROMPTPILE_MCP_BASE_URL:-}" && -z "${PROMPTPILE_MCP_BIN:-}" && ! -f 
 fi
 
 if [[ -z "${PROMPTPILE_MCP_BASE_URL:-}" && -z "${PROMPTPILE_MCP_BIN:-}" && ! -f "$REPO_MCP_DIST" ]] && ! command -v promptpile-mcp >/dev/null 2>&1; then
-  echo "[ERROR] promptpile-mcp CLI is required for interactive daily." >&2
+  echo "[ERROR] promptpile-mcp CLI is required for interactive daily/play." >&2
   exit 1
 fi
 

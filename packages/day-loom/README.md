@@ -1112,3 +1112,35 @@ day-loom daily \
 ```
 
 第一版只生成方向性 `planned_beats`，不会生成具体事件、日记，也不会修改人物或场景记忆。
+
+---
+
+## play：逐事件执行当日计划
+
+`play` 读取 `daily` 已生成的 `plan.initial.json`，一次只生成并执行一个事件。事件结算后，AI 会依据真实结果完成、取消、修改或插入后续 beat，因此后续事件不会预先写死。
+
+```bash
+day-loom play -d ./path/to/world
+```
+
+运行条件：
+
+- 当前 World 的 `phase` 必须是 `planned` 或 `playing`
+- 已设置 `DEEPSEEK_API_KEY`
+- MCP / promptpile 依赖与 `daily` 相同
+
+事件内支持多行自由输入。输入 `/status` 查看当前事件定义，输入 `/exit` 保存进度并退出；再次运行相同命令会从持久化步骤继续。
+
+主要状态文件：
+
+```text
+days/day_NNNN/plan.current.json
+days/day_NNNN/play.state.json
+days/day_NNNN/runtime.state.json
+days/day_NNNN/events/event_NNN/event.json
+days/day_NNNN/events/event_NNN/transcript.md
+days/day_NNNN/events/event_NNN/result.json
+days/day_NNNN/events/event_NNN/replan.json
+```
+
+每个事件按 `生成 -> 交互 -> 结算 -> 重排` 推进。状态补丁和重排操作带有 applied 标记，进程中断后恢复时不会重复应用。所有 beat 完成或取消后，World 与当日 phase 会进入 `settling`，等待后续日终结算命令处理。

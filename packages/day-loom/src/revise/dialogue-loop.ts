@@ -8,13 +8,14 @@ import { finalizeRevision } from './finalize';
 import { assertInitializedWorld, resolveWorldRoot } from './guard';
 import { connectOrStartGateway } from './mcp-gateway';
 import { assertAllowedWorldRoot, exportReadonlyTools } from './mcp-tools';
-import { parseReviseStatus, stripReviseStatus } from './parse-assistant';
+import { parseReviseStatus } from './parse-assistant';
 import { runPromptpileUntilText } from './promptpile-loop';
 import { askYesNo, readReviseUserInput } from './read-user-input';
 import { appendUserMessage, buildTranscript, cleanupSession, createReviseSession, readDraft, writeDraft } from './session';
 import { projectRevisePayload } from './project-payload';
 import { validateRevisePayload } from './validate-payload';
 import type { ReviseOptions } from './types';
+import { createFilteredStreamOutput } from '../shared/filtered-stream-output';
 
 export async function reviseWorldInteractive(dir: string, options: ReviseOptions = {}): Promise<void> {
   if (!process.env.DEEPSEEK_API_KEY?.trim()) throw new Error('DEEPSEEK_API_KEY is not set. Interactive revise requires an API key.');
@@ -54,10 +55,13 @@ export async function reviseWorldInteractive(dir: string, options: ReviseOptions
           return;
         }
         appendUserMessage(session.messagesDir, input);
-        const reply = await runPromptpileUntilText(session, gateway.baseUrl, gateway.token, maxToolRounds);
+        process.stdout.write('\nAI> ');
+        const stream = createFilteredStreamOutput({ hiddenBlocks: ['revise-status'] });
+        const reply = await runPromptpileUntilText(session, gateway.baseUrl, gateway.token, maxToolRounds, text => stream.push(text));
+        stream.flush();
         try { const status = parseReviseStatus(reply); if (status) writeDraft(session, status); }
         catch (err) { process.stderr.write(`Warning: ${err instanceof Error ? err.message : err}\n`); }
-        process.stdout.write(`\nAI> ${stripReviseStatus(reply)}\n`);
+        process.stdout.write('\n');
       }
   } finally {
     if (gateway) await gateway.stop();

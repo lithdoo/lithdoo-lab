@@ -7,3 +7,5 @@ try {
   console.error('Error:', e instanceof Error ? e.message : e);
   process.exitCode = 1;
 }
+
+export * from './play';

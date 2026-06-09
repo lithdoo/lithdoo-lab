@@ -3,7 +3,7 @@ import { applyDailyPlan, describeChanges } from './apply-plan';
 import { assertDailyCanStart, assertInitializedWorld, readCurrentDay, resolveWorldRoot } from './guard';
 import { connectOrStartGateway } from './mcp-gateway';
 import { assertAllowedPlayerContextRoot, exportReadonlyTools } from './mcp-tools';
-import { parseDailyStatus, stripDailyStatus } from './parse-assistant';
+import { parseDailyStatus } from './parse-assistant';
 import { projectDailyPlan } from './project-plan';
 import { runPromptpileUntilText } from './promptpile-loop';
 import { askYesNo, readDailyUserInput } from './read-user-input';
@@ -12,6 +12,7 @@ import { validateDailyPlan } from './validate-plan';
 import { buildPlayerContext } from './player-context';
 import { finalizeDailyPlan } from './finalize';
 import type { DailyOptions } from './types';
+import { createFilteredStreamOutput } from '../shared/filtered-stream-output';
 
 export async function dailyInteractive(dir: string, options: DailyOptions = {}): Promise<void> {
   if (!process.env.DEEPSEEK_API_KEY?.trim()) throw new Error('DEEPSEEK_API_KEY is not set. Interactive daily requires an API key.');
@@ -52,10 +53,13 @@ export async function dailyInteractive(dir: string, options: DailyOptions = {}):
         return;
       }
       appendUserMessage(session.messagesDir, input);
-      const reply = await runPromptpileUntilText(session, gateway.baseUrl, gateway.token, maxToolRounds);
+      process.stdout.write('\nAI> ');
+      const stream = createFilteredStreamOutput({ hiddenBlocks: ['daily-status'] });
+      const reply = await runPromptpileUntilText(session, gateway.baseUrl, gateway.token, maxToolRounds, text => stream.push(text));
+      stream.flush();
       try { const status = parseDailyStatus(reply); if (status) writeDraft(session, status); }
       catch (err) { process.stderr.write(`Warning: ${err instanceof Error ? err.message : err}\n`); }
-      process.stdout.write(`\nAI> ${stripDailyStatus(reply)}\n`);
+      process.stdout.write('\n');
     }
   } finally {
     if (gateway) await gateway.stop();

@@ -5,7 +5,7 @@ import { executeReadonlyCalls } from './mcp-tools';
 import { getLatestAssistantText, getLatestCallsFile } from './session';
 import type { DailySession } from './types';
 
-export async function runPromptpileUntilText(session: DailySession, baseUrl: string, token: string | undefined, maxToolRounds: number): Promise<string> {
+export async function runPromptpileUntilText(session: DailySession, baseUrl: string, token: string | undefined, maxToolRounds: number, onDelta: (text: string) => void = () => undefined): Promise<string> {
   for (let round = 0; round <= maxToolRounds; round += 1) {
     const spawnConfig = getPromptpileSpawnConfig();
     const result = await runPromptpileWithStream({
@@ -20,7 +20,7 @@ export async function runPromptpileUntilText(session: DailySession, baseUrl: str
       ],
       cwd: session.root,
       quiet: true,
-      onDelta: text => process.stdout.write(text)
+      onDelta
     });
     if (result.error) throw new Error('Failed to run ' + spawnConfig.displayName + ': ' + result.error.message);
     if (result.status !== 0) throw new Error('promptpile exited with code ' + result.status + ': ' + result.stderr.trim().slice(-500));

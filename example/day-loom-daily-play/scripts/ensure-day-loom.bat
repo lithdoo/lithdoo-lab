@@ -45,7 +45,7 @@ if exist "%REPO_MCP_DIR%\package.json" (
   popd
 )
 if not exist "%REPO_MCP_DIST%" (
-  echo [ERROR] promptpile-mcp CLI is required for interactive daily.
+  echo [ERROR] promptpile-mcp CLI is required for interactive daily/play.
   exit /b 1
 )
 

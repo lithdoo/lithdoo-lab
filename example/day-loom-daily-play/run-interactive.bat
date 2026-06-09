@@ -47,9 +47,10 @@ if not exist "%OUT_DIR%\manifest.yaml" (
 
 for /f "usebackq delims=" %%p in (`node -e "const fs=require('fs');const p=process.argv[1]+'\\current.yaml';const m=fs.readFileSync(p,'utf8').match(/^phase:\s*(\S+)/m);console.log(m?m[1]:'')" "%OUT_DIR%"`) do set "PHASE=%%p"
 if not "%PHASE%"=="idle" (
-  echo [ERROR] Target World is not idle: %PHASE%
-  echo To rerun daily, delete:
-  echo   %OUT_DIR%
+  echo [ERROR] Daily requires an idle World, got: %PHASE%
+  if "%PHASE%"=="planned" echo Continue with: run-play-interactive.bat
+  if "%PHASE%"=="playing" echo Continue with: run-play-interactive.bat
+  if not "%PHASE%"=="planned" if not "%PHASE%"=="playing" echo To restart from daily, delete: %OUT_DIR%
   exit /b 1
 )
 
