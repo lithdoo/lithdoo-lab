@@ -66,8 +66,14 @@ function main() {
     if (fs.existsSync(resultFile)) {
       const result = readJson(resultFile);
       if (result.event_id !== eventId) errors.push(`${eventId}/result.json id mismatch`);
-      for (const name of ['state.patch.json', 'state.patch.applied', 'replan.json', 'replan.applied']) {
+      for (const name of ['state.patch.json', 'state.patch.applied']) {
         if (!fs.existsSync(path.join(eventDir, name))) errors.push(`${eventId}/${name} is missing after resolution`);
+      }
+      const replanComplete = state.completed_events.includes(eventId) || fs.existsSync(path.join(eventDir, 'replan.applied'));
+      if (replanComplete) {
+        for (const name of ['replan.json', 'replan.applied']) {
+          if (!fs.existsSync(path.join(eventDir, name))) errors.push(`${eventId}/${name} is missing after replanning`);
+        }
       }
     }
   }

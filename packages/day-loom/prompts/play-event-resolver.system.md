@@ -14,4 +14,6 @@
 }
 ```
 
+time_advanced 必须使用紧凑时长格式，例如 `30m`、`2h` 或 `1h30m`，不要使用自然语言。
+
 patch key 只能是简单 snake_case 标识符，value 只能是标量。

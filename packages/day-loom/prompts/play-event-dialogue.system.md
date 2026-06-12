@@ -12,4 +12,6 @@
 }
 ```
 
+状态块必须是严格合法的 JSON。字符串中的双引号必须写成 `\"`，不要直接嵌入未转义的双引号。
+
 仅当当前事件形成明确结果时使用 status=resolved、needs_user_action=false，并提供 resolution_summary。普通回答不代表事件完成。

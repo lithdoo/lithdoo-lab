@@ -13,3 +13,5 @@
 ```
 
 允许 complete、cancel、modify、insert。不要超过计划 max_events。
+
+insert.after 只能引用输入中列出的现有 beat ID。新 beat 的 ID 由系统生成，不能预测，也不能让后续 insert 引用同批新增 beat。严格遵守 remaining insert slots；名额为 0 时不要输出 insert。

@@ -4,7 +4,49 @@ function nonEmpty(v: unknown, label: string): asserts v is string { if (typeof v
 function strings(v: unknown, label: string): asserts v is string[] { if (!Array.isArray(v) || v.some(x => typeof x !== 'string')) throw new Error(label + ' must be a string array'); }
 export function validateGeneratedEvent(v: GeneratedEvent, expectedEvent: string, beat: string): void { if (v.id !== expectedEvent || !EVENT_ID.test(v.id)) throw new Error('Invalid event id'); if (v.source_beat !== beat) throw new Error('Event source beat mismatch'); nonEmpty(v.title, 'Event title'); nonEmpty(v.opening, 'Event opening'); nonEmpty(v.situation, 'Event situation'); strings(v.suggested_actions, 'Event suggested_actions'); if (v.suggested_actions.length > 5) throw new Error('Event suggested_actions exceeds 5'); for (const key of ['outcome','result','success','failure','reward']) if (key in (v as unknown as Record<string, unknown>)) throw new Error('Generated event contains forbidden result field: ' + key); }
 export function validateEventStatus(v: EventStatus): void { if (v.status !== 'ongoing' && v.status !== 'resolved') throw new Error('Invalid event status'); nonEmpty(v.situation, 'Event status situation'); if (typeof v.needs_user_action !== 'boolean') throw new Error('needs_user_action must be boolean'); if (v.status === 'resolved') nonEmpty(v.resolution_summary, 'resolution_summary'); }
-export function validateEventResult(v: EventResult, eventId: string, beatId: string): void { if (v.event_id !== eventId || v.source_beat !== beatId) throw new Error('Event result identity mismatch'); nonEmpty(v.summary, 'Event result summary'); strings(v.protagonist_learned, 'protagonist_learned'); if (!TIME.test(v.time_advanced)) throw new Error('time_advanced must look like 30m or 2h'); if (typeof v.completed_source_beat !== 'boolean') throw new Error('completed_source_beat must be boolean'); if (!Array.isArray(v.state_patch) || v.state_patch.length > 20) throw new Error('Invalid state_patch'); for (const patch of v.state_patch) { if (patch.op !== 'set' || !ID.test(patch.key)) throw new Error('Invalid runtime patch'); if (!['string','number','boolean'].includes(typeof patch.value) && patch.value !== null) throw new Error('Invalid runtime patch value'); } }
+export function normalizeTimeAdvanced(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value) + 'm';
+  if (typeof value !== 'string') throw new Error('time_advanced must be a duration string or minute count');
+  const compact = value.trim().toLowerCase().replace(/[约大概左右\s]/g, '');
+  if (TIME.test(compact)) return compact;
+  const compound = compact.match(/^(?:(\d+(?:\.\d+)?)h(?:ours?)?)?(?:(\d+)m(?:in(?:ute)?s?)?)?$/);
+  if (compound && (compound[1] || compound[2])) {
+    const minutes = Math.round(Number(compound[1] ?? 0) * 60 + Number(compound[2] ?? 0));
+    if (minutes > 0) return minutes + 'm';
+  }
+  const chinese = compact.match(/^(?:(\d+(?:\.\d+)?)小时)?(?:(\d+)分钟)?$/);
+  if (chinese && (chinese[1] || chinese[2])) {
+    const minutes = Math.round(Number(chinese[1] ?? 0) * 60 + Number(chinese[2] ?? 0));
+    if (minutes > 0) return minutes + 'm';
+  }
+  throw new Error('time_advanced must describe a positive duration, such as 30m, 1h30m, or 1小时30分钟');
+}
+export function validateEventResult(v: EventResult, eventId: string, beatId: string): void { if (v.event_id !== eventId || v.source_beat !== beatId) throw new Error('Event result identity mismatch'); nonEmpty(v.summary, 'Event result summary'); strings(v.protagonist_learned, 'protagonist_learned'); v.time_advanced = normalizeTimeAdvanced(v.time_advanced); if (typeof v.completed_source_beat !== 'boolean') throw new Error('completed_source_beat must be boolean'); if (!Array.isArray(v.state_patch) || v.state_patch.length > 20) throw new Error('Invalid state_patch'); for (const patch of v.state_patch) { if (patch.op !== 'set' || !ID.test(patch.key)) throw new Error('Invalid runtime patch'); if (!['string','number','boolean'].includes(typeof patch.value) && patch.value !== null) throw new Error('Invalid runtime patch value'); } }
+export function normalizeReplanPayload(v: ReplanPayload, plan: CurrentPlan): { payload: ReplanPayload; warnings: string[] } {
+  if (!Array.isArray(v.operations)) return { payload: v, warnings: [] };
+  const validIds = new Set(plan.beats.map(beat => beat.id));
+  let insertSlots = Math.max(0, plan.max_events - plan.beats.length);
+  const warnings: string[] = [];
+  const operations: ReplanPayload['operations'] = [];
+  for (const original of v.operations) {
+    const op = JSON.parse(JSON.stringify(original)) as ReplanPayload['operations'][number];
+    if (op.op !== 'insert') {
+      operations.push(op);
+      continue;
+    }
+    if (insertSlots === 0) {
+      warnings.push('Dropped insert because max_events has no remaining slots');
+      continue;
+    }
+    if (op.after && !validIds.has(op.after)) {
+      warnings.push('Removed unknown insertion anchor ' + op.after + '; appending the beat instead');
+      delete op.after;
+    }
+    operations.push(op);
+    insertSlots--;
+  }
+  return { payload: { operations }, warnings };
+}
 export function validateReplan(v: ReplanPayload, plan: CurrentPlan): void {
   if (!Array.isArray(v.operations) || v.operations.length > 10) throw new Error('Invalid replan operations');
   const byId = new Map(plan.beats.map(beat => [beat.id, beat]));
