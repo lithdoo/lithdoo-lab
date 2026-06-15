@@ -12,4 +12,4 @@ export const READONLY_MCP_TOOL_NAMES = new Set([
 
 export const OPENING_ASSISTANT = `你好，我是 day-loom 的当日计划助手。
 
-我只能根据主角视角已知的信息回答问题和协助制定今日计划。你可以先询问过往信息，也可以直接说明今天想做什么。每轮可输入多行内容，结束时按 Ctrl+D（macOS/Linux）或 Ctrl+Z 后 Enter（Windows）提交。输入 /pending 查看计划草稿，输入 /start 生成初步当日计划，输入 /cancel 放弃退出。`;
+我只能根据主角视角已知的信息回答问题和协助制定今日计划。你可以先询问过往信息，也可以直接说明今天想做什么。每轮可输入多行内容，结束时按 Ctrl+D（macOS/Linux）或 Ctrl+Z 后 Enter（Windows）提交。你可以直接用自然语言要求查看、确认、取消或保存计划；系统会识别你的意图。`;

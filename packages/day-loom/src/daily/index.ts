@@ -1,5 +1,5 @@
 import { applyDailyPlan, describeChanges } from './apply-plan';
-import { assertDailyCanStart, assertInitializedWorld, readCurrentDay, resolveWorldRoot } from './guard';
+import { assertDailyCanStart, assertInitializedWorld, readCurrentDay, readLastCommittedDay, resolveWorldRoot } from './guard';
 import { readDailyPlan } from './parse-payload';
 import { projectDailyPlan } from './project-plan';
 import { validateDailyPlan } from './validate-plan';
@@ -14,7 +14,7 @@ export function dailyFromProposal(dir: string, proposalPath: string, options: Da
   const day = readCurrentDay(worldRoot);
   const plan = readDailyPlan(proposalPath);
   validateDailyPlan(plan, day);
-  const changes = projectDailyPlan(plan);
+  const changes = projectDailyPlan(plan, undefined, readLastCommittedDay(worldRoot));
   const description = describeChanges(worldRoot, changes);
   if (options.dryRun) return { worldRoot, description, applied: false };
   if (!options.yes) throw new Error('Applying a daily plan requires --yes. Use --dry-run to inspect changes.');

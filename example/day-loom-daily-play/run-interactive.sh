@@ -64,4 +64,9 @@ if [[ -n "${PROMPTPILE_MCP_BASE_URL:-}" ]]; then
 fi
 
 npx --prefix "$DAY_LOOM_DIR" day-loom daily "${DAILY_ARGS[@]}"
-node "$SCRIPT_DIR/scripts/verify-daily.js" "$OUT_DIR"
+PHASE=$(awk '/^phase:/ {print $2}' "$OUT_DIR/current.yaml")
+if [[ "$PHASE" == "planned" ]]; then
+  node "$SCRIPT_DIR/scripts/verify-daily.js" "$OUT_DIR"
+else
+  echo "Daily plan was not applied; current phase remains: $PHASE"
+fi

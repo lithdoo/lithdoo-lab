@@ -14,6 +14,13 @@ export function readCurrentDay(worldRoot: string): string {
   return match[1];
 }
 
+export function readLastCommittedDay(worldRoot: string): string {
+  const current = readCurrentYaml(worldRoot);
+  const match = current.match(/^last_committed_day:\s*(\S+)\s*$/m);
+  if (!match) throw new Error('current.yaml missing last_committed_day');
+  return match[1];
+}
+
 export function readCurrentPhase(worldRoot: string): string {
   const current = readCurrentYaml(worldRoot);
   const match = current.match(/^phase:\s*(\S+)\s*$/m);

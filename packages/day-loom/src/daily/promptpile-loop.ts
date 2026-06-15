@@ -5,7 +5,7 @@ import { executeReadonlyCalls } from './mcp-tools';
 import { getLatestAssistantText, getLatestCallsFile } from './session';
 import type { DailySession } from './types';
 
-export async function runPromptpileUntilText(session: DailySession, baseUrl: string, token: string | undefined, maxToolRounds: number, onDelta: (text: string) => void = () => undefined): Promise<string> {
+export async function runPromptpileUntilText(session: DailySession, baseUrl: string, token: string | undefined, maxToolRounds: number, onDelta: (text: string) => void = () => undefined, disableTools = false): Promise<string> {
   for (let round = 0; round <= maxToolRounds; round += 1) {
     const spawnConfig = getPromptpileSpawnConfig();
     const result = await runPromptpileWithStream({
@@ -14,7 +14,7 @@ export async function runPromptpileUntilText(session: DailySession, baseUrl: str
         ...spawnConfig.argvPrefix,
         '--config', path.basename(session.promptpileConfig),
         '-d', 'messages',
-        '--tools-file', path.basename(session.toolsFile),
+        ...(disableTools ? ['--disable-tool'] : ['--tools-file', path.basename(session.toolsFile)]),
         '--continue',
         '--quiet'
       ],

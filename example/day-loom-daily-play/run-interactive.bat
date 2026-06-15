@@ -73,5 +73,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node "%~dp0scripts\verify-daily.js" "%OUT_DIR%"
+for /f "usebackq delims=" %%p in (`node -e "const fs=require('fs');const p=process.argv[1]+'\\current.yaml';const m=fs.readFileSync(p,'utf8').match(/^phase:\s*(\S+)/m);console.log(m?m[1]:'')" "%OUT_DIR%"`) do set "PHASE=%%p"
+if "%PHASE%"=="planned" (
+  node "%~dp0scripts\verify-daily.js" "%OUT_DIR%"
+) else (
+  echo Daily plan was not applied; current phase remains: %PHASE%
+)
 exit /b %errorlevel%

@@ -53,6 +53,26 @@ export function createFinalizeSession(transcript: string, draft: DailyDraft, day
   return { root, messagesDir, toolsFile, promptpileConfig, draftFile, playerContextRoot };
 }
 
+export function createIntentSession(input: { input: string; draft: DailyDraft; latestAssistantReply: string }): DailySession {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'day-loom-daily-intent-'));
+  const messagesDir = path.join(root, 'messages');
+  const toolsFile = path.join(root, 'readonly.tools.toml');
+  const promptpileConfig = path.join(root, 'promptpile.toml');
+  const draftFile = path.join(root, 'draft.json');
+  const playerContextRoot = path.join(root, 'unused-context');
+  fs.mkdirSync(messagesDir, { recursive: true });
+  fs.writeFileSync(promptpileConfig, promptpileToml(), 'utf8');
+  fs.writeFileSync(toolsFile, '', 'utf8');
+  fs.writeFileSync(path.join(messagesDir, '[0]system.md'), loadDailyPrompt('daily-intent-router'), 'utf8');
+  fs.writeFileSync(path.join(messagesDir, '[1]user.md'), JSON.stringify({
+    latest_user_input: input.input,
+    current_draft: input.draft,
+    latest_assistant_reply: input.latestAssistantReply,
+  }, null, 2), 'utf8');
+  writeDraft({ root, messagesDir, toolsFile, promptpileConfig, draftFile, playerContextRoot }, input.draft);
+  return { root, messagesDir, toolsFile, promptpileConfig, draftFile, playerContextRoot };
+}
+
 export function emptyDraft(): DailyDraft { return { user_intent: '', known_context: [], constraints: [], open_questions: [] }; }
 export function readDraft(session: DailySession): DailyDraft { return JSON.parse(fs.readFileSync(session.draftFile, 'utf8')) as DailyDraft; }
 export function writeDraft(session: DailySession, draft: DailyDraft): void { fs.writeFileSync(session.draftFile, `${JSON.stringify(draft, null, 2)}\n`, 'utf8'); }

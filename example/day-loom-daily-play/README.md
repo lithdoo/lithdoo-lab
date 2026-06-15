@@ -150,3 +150,7 @@ days/day_NNNN/ending/settlement.proposal.json
 ```
 
 需要纯手工 proposal 时仍可编辑 `settlement.proposal.example.json`。提交成功后，当前天生成 `summary.md` 和 `ending/` 产物，世界推进到下一天的 `idle`，随后再次运行 `./run-interactive.sh`。
+
+### Natural-language Daily Controls
+
+Daily planning now routes each normal user message through a separate intent classifier. You can say “开始执行计划”、“让我看看当前计划”、“取消今天的计划”或“先保存退出” directly. The classifier cannot access World tools and never writes files; starting or cancelling still requires confirmation. Slash commands remain available as a debugging fallback.

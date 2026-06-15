@@ -23,7 +23,7 @@ function main() {
   const current = read(path.join(worldRoot, 'current.yaml'));
   const day = yamlValue(current, 'day');
   const phase = yamlValue(current, 'phase');
-  if (day !== 'day_0001') errors.push(`current.yaml day expected day_0001, got ${day}`);
+  if (!/^day_\d{4}$/.test(day)) errors.push(`current.yaml day is invalid: ${day}`);
   if (phase !== 'planned') errors.push(`current.yaml phase expected planned, got ${phase}`);
 
   const dayDir = `days/${day}`;
@@ -53,7 +53,11 @@ function main() {
   }
 
   const logPath = path.join(worldRoot, 'logs', 'state_changes.jsonl');
-  if (!fs.existsSync(logPath) || !read(logPath).includes('"type":"daily_plan_created"')) errors.push('daily_plan_created log entry missing');
+  if (!fs.existsSync(logPath)) errors.push('state_changes.jsonl is missing');
+  else {
+    const entries = read(logPath).split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+    if (!entries.some(entry => entry.type === 'daily_plan_created' && entry.day === day)) errors.push(`daily_plan_created log entry missing for ${day}`);
+  }
 
   if (errors.length) fail(errors);
   console.log(`verify-daily: OK ${worldRoot}`);

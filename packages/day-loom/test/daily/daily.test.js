@@ -61,3 +61,14 @@ test('dailyFromProposal refuses non-idle phase and mismatched day', () => {
   assert.throws(() => dailyFromProposal(root2, proposal2, { yes: true }), /day mismatch/);
   fs.rmSync(root2, { recursive: true, force: true });
 });
+
+test('daily proposal preserves last committed day when planning day two', () => {
+  const root = createWorld();
+  fs.writeFileSync(path.join(root, 'current.yaml'), 'day: day_0002\nphase: idle\nlast_committed_day: day_0001\n', 'utf8');
+  const proposal = writePlan(root, plan({ day: 'day_0002' }));
+  const result = dailyFromProposal(root, proposal, { yes: true });
+  assert.equal(result.applied, true);
+  assert.match(fs.readFileSync(path.join(root, 'current.yaml'), 'utf8'), /day: day_0002\nphase: planned\nlast_committed_day: day_0001/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'days', 'day_0002', 'plan.initial.json'), 'utf8')).day, 'day_0002');
+  fs.rmSync(root, { recursive: true, force: true });
+});

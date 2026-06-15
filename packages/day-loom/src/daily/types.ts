@@ -1,3 +1,11 @@
+export type DailyAction = 'continue' | 'pending' | 'start' | 'cancel' | 'exit';
+
+export interface DailyIntent {
+  action: DailyAction;
+  confidence: number;
+  reason: string;
+}
+
 export interface DailyBeat {
   id: string;
   intent: string;
