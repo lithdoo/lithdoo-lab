@@ -3,6 +3,7 @@ import { registerDailyCommand } from './daily';
 import { registerInitCommand } from './init';
 import { registerReviseCommand } from './revise';
 import { registerPlayCommand } from './play';
+import { registerSettleCommand } from './settle';
 
 export function parseCli(argv: string[] = process.argv): void {
   const program = new Command();
@@ -15,6 +16,7 @@ export function parseCli(argv: string[] = process.argv): void {
   registerInitCommand(program);
   registerDailyCommand(program);
   registerPlayCommand(program);
+  registerSettleCommand(program);
   registerReviseCommand(program);
 
   program.parse(argv);

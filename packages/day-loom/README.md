@@ -1129,7 +1129,7 @@ day-loom play -d ./path/to/world
 - 已设置 `DEEPSEEK_API_KEY`
 - MCP / promptpile 依赖与 `daily` 相同
 
-事件内支持多行自由输入。输入 `/status` 查看当前事件定义，输入 `/exit` 保存进度并退出；再次运行相同命令会从持久化步骤继续。
+事件内支持多行自由输入。输入 `/status` 查看当前事件定义，输入 `/end-day` 立即结束当天并进入结算，输入 `/exit` 保存进度并退出；再次运行相同命令会从持久化步骤继续。
 
 主要状态文件：
 

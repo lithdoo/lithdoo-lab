@@ -16,7 +16,8 @@ export function parseEventStatus(text: string): EventStatus {
       status: status as EventStatus['status'],
       situation,
       needs_user_action: needsUserAction === 'true',
-      ...(resolutionSummary === undefined ? {} : { resolution_summary: resolutionSummary })
+      ...(resolutionSummary === undefined ? {} : { resolution_summary: resolutionSummary }),
+      end_day: raw.match(/"end_day"\s*:\s*(true|false)/)?.[1] === 'true'
     };
   }
 }

@@ -9,3 +9,5 @@ try {
 }
 
 export * from './play';
+
+export * from './settle';

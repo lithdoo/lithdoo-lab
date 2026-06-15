@@ -14,4 +14,8 @@
 
 允许 complete、cancel、modify、insert。不要超过计划 max_events。
 
+必须识别事件是否已经顺带满足其他 pending beat，并将其 complete。不要为已经在事件中发生的内容再次保留或新增 beat。
+
+当事件结果 end_day=true 时，不得 insert 或 modify；完成已满足的 beat，并取消当天剩余未执行 beat。第二天的打算不能插入当前日计划。
+
 insert.after 只能引用输入中列出的现有 beat ID。新 beat 的 ID 由系统生成，不能预测，也不能让后续 insert 引用同批新增 beat。严格遵守 remaining insert slots；名额为 0 时不要输出 insert。
