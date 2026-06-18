@@ -16,6 +16,7 @@ import { projectRevisePayload } from './project-payload';
 import { validateRevisePayload } from './validate-payload';
 import type { ReviseOptions } from './types';
 import { createFilteredStreamOutput } from '../shared/filtered-stream-output';
+import { withLoading } from '../utils/loading';
 
 export async function reviseWorldInteractive(dir: string, options: ReviseOptions = {}): Promise<void> {
   if (!process.env.DEEPSEEK_API_KEY?.trim()) throw new Error('DEEPSEEK_API_KEY is not set. Interactive revise requires an API key.');
@@ -26,9 +27,13 @@ export async function reviseWorldInteractive(dir: string, options: ReviseOptions
   let gateway: Awaited<ReturnType<typeof connectOrStartGateway>> | undefined;
   const maxToolRounds = options.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
   try {
-    gateway = await connectOrStartGateway(session.root, worldRoot, options.mcpBaseUrl, options.mcpToken);
-    await exportReadonlyTools(gateway.baseUrl, gateway.token, session.toolsFile);
-    await assertAllowedWorldRoot(gateway.baseUrl, gateway.token, worldRoot, session.root);
+    await withLoading('正在准备修订会话...', async loading => {
+      gateway = await connectOrStartGateway(session.root, worldRoot, options.mcpBaseUrl, options.mcpToken);
+      loading.update('正在准备只读工具...');
+      await exportReadonlyTools(gateway.baseUrl, gateway.token, session.toolsFile);
+      await assertAllowedWorldRoot(gateway.baseUrl, gateway.token, worldRoot, session.root);
+    });
+    if (!gateway) throw new Error('Failed to initialize readonly gateway');
     process.stdout.write(`\n--- World revision session ---\n\n${OPENING_ASSISTANT}\n`);
     while (true) {
         const input = await readReviseUserInput();
@@ -40,7 +45,8 @@ export async function reviseWorldInteractive(dir: string, options: ReviseOptions
         if (input === '/apply') {
           const draft = readDraft(session);
           if (!draft.pending_changes.length) { process.stdout.write('No pending changes.\n'); continue; }
-          const payload = await finalizeRevision(buildTranscript(session.messagesDir), draft, session.toolsFile, gateway.baseUrl, gateway.token, maxToolRounds, options.keepSession);
+          const payload = await withLoading('正在生成修订方案...', () =>
+            finalizeRevision(buildTranscript(session.messagesDir), draft, session.toolsFile, gateway!.baseUrl, gateway!.token, maxToolRounds, options.keepSession));
           validateRevisePayload(payload);
           const changes = projectRevisePayload(payload, worldRoot);
           const diff = buildUnifiedDiff(worldRoot, changes);

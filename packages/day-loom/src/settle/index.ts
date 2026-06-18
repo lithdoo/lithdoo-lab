@@ -13,6 +13,7 @@ import { readSettlementProposal } from './parse-payload';
 import { describeSettlementChanges, projectSettlement } from './project';
 import type { SettlementOptions, SettlementResult } from './types';
 import { nextDayId, validateSettlementNarrative, validateSettlementProposal } from './validate';
+import { withLoading } from '../utils/loading';
 
 export function settleFromProposal(dir: string, proposalPath: string, options: SettlementOptions = {}): SettlementResult {
   const worldRoot = resolveWorldRoot(dir);
@@ -41,11 +42,16 @@ export async function settleWithAi(dir: string, options: SettlementOptions = {})
   const toolsFile = path.join(serviceRoot, 'readonly.tools.toml');
   let gateway: Awaited<ReturnType<typeof connectOrStartGateway>> | undefined;
   try {
-    buildSettlementPlayerContext(worldRoot, day, contextRoot);
-    gateway = await connectOrStartGateway(serviceRoot, contextRoot, options.mcpBaseUrl, options.mcpToken);
-    await exportReadonlyTools(gateway.baseUrl, gateway.token, toolsFile);
-    await assertAllowedPlayerContextRoot(gateway.baseUrl, gateway.token, contextRoot, serviceRoot);
-    const reply = await callSettlementAi(buildSettlementPromptInput(worldRoot, day), toolsFile, gateway.baseUrl, gateway.token, options.maxToolRounds ?? 8, options.keepSession);
+    await withLoading('正在准备结算上下文...', async loading => {
+      buildSettlementPlayerContext(worldRoot, day, contextRoot);
+      loading.update('正在启动只读服务...');
+      gateway = await connectOrStartGateway(serviceRoot, contextRoot, options.mcpBaseUrl, options.mcpToken);
+      loading.update('正在准备只读工具...');
+      await exportReadonlyTools(gateway.baseUrl, gateway.token, toolsFile);
+      await assertAllowedPlayerContextRoot(gateway.baseUrl, gateway.token, contextRoot, serviceRoot);
+    });
+    const reply = await withLoading('正在生成结算提案...', () =>
+      callSettlementAi(buildSettlementPromptInput(worldRoot, day), toolsFile, gateway!.baseUrl, gateway!.token, options.maxToolRounds ?? 8, options.keepSession));
     const narrative = parseSettlementNarrative(reply);
     validateSettlementNarrative(narrative);
     const proposal = buildProgramSettlementProposal(worldRoot, day, narrative);

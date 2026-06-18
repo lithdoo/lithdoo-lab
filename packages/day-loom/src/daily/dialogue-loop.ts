@@ -1,4 +1,5 @@
 import { createFilteredStreamOutput } from '../shared/filtered-stream-output';
+import { withLoading } from '../utils/loading';
 import { DEFAULT_MAX_TOOL_ROUNDS, OPENING_ASSISTANT } from './constants';
 import { applyDailyPlan, describeChanges } from './apply-plan';
 import { finalizeDailyPlan } from './finalize';
@@ -28,10 +29,15 @@ export async function dailyInteractive(dir: string, options: DailyOptions = {}):
   const maxToolRounds = options.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
 
   try {
-    buildPlayerContext(worldRoot, session.playerContextRoot);
-    gateway = await connectOrStartGateway(session.root, session.playerContextRoot, options.mcpBaseUrl, options.mcpToken);
-    await exportReadonlyTools(gateway.baseUrl, gateway.token, session.toolsFile);
-    await assertAllowedPlayerContextRoot(gateway.baseUrl, gateway.token, session.playerContextRoot, session.root);
+    await withLoading('正在准备当日计划...', async loading => {
+      buildPlayerContext(worldRoot, session.playerContextRoot);
+      loading.update('正在启动只读服务...');
+      gateway = await connectOrStartGateway(session.root, session.playerContextRoot, options.mcpBaseUrl, options.mcpToken);
+      loading.update('正在准备主角上下文...');
+      await exportReadonlyTools(gateway.baseUrl, gateway.token, session.toolsFile);
+      await assertAllowedPlayerContextRoot(gateway.baseUrl, gateway.token, session.playerContextRoot, session.root);
+    });
+    if (!gateway) throw new Error('Failed to initialize readonly gateway');
     process.stdout.write(`\n--- Daily planning session ---\n\n${OPENING_ASSISTANT}\n`);
 
     while (true) {
@@ -53,15 +59,15 @@ export async function dailyInteractive(dir: string, options: DailyOptions = {}):
       else {
         let intent = fallbackDailyIntent('Intent router was not called');
         try {
-          intent = await routeDailyIntent(
+          intent = await withLoading('正在识别操作...', () => routeDailyIntent(
             input,
             readDraft(session),
             getLatestAssistantText(session.messagesDir),
-            gateway.baseUrl,
-            gateway.token,
+            gateway!.baseUrl,
+            gateway!.token,
             maxToolRounds,
             false,
-          );
+          ));
         } catch (error) {
           process.stderr.write(`Warning: daily intent router failed; treating input as a planning message: ${error instanceof Error ? error.message : error}\n`);
           intent = fallbackDailyIntent('Router failure');
@@ -129,7 +135,8 @@ async function finalizeAndApplyPlan(
     return false;
   }
   const transcript = buildTranscript(session.messagesDir);
-  const plan = await finalizeDailyPlan(transcript, draft, day, session.toolsFile, baseUrl, token, maxToolRounds, options.keepSession);
+  const plan = await withLoading('正在生成正式计划...', () =>
+    finalizeDailyPlan(transcript, draft, day, session.toolsFile, baseUrl, token, maxToolRounds, options.keepSession));
   validateDailyPlan(plan, day);
   const changes = projectDailyPlan(plan, transcript, lastCommittedDay);
   const description = describeChanges(worldRoot, changes);

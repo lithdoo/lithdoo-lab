@@ -9,20 +9,21 @@ import {
 import { cleanupSession } from './cleanup';
 import type { InitPayload } from './types';
 import { FINALIZE_USER_PROMPT } from './constants';
+import { withLoading } from '../utils/loading';
 
 export async function finalizeWorld(transcript: string): Promise<InitPayload> {
   const session = createFinalizeSession(transcript);
   appendUserMessage(session.messagesDir, FINALIZE_USER_PROMPT);
 
   try {
-    const result = await runPromptpile(session, [
+    const result = await withLoading('正在生成世界文件...', () => runPromptpile(session, [
       '--config',
       'promptpile.toml',
       '-d',
       'messages',
       '--continue',
       '--disable-tool',
-    ]);
+    ]));
 
     assertPromptpileOk(result, 'Finalize');
 

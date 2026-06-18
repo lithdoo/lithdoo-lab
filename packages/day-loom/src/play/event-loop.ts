@@ -11,6 +11,7 @@ import { parseEventResult, parseEventStatus, parseGeneratedEvent, parseReplan } 
 import { applyEventResult, applyReplan, buildResultReplan, eventId, eventRoot, finishPlay, initializePlay, loadPlan, loadState, nextExecutableBeat, savePlan, saveState } from './state';
 import { normalizeReplanPayload, validateEventResult, validateEventStatus, validateGeneratedEvent, validateReplan } from './validate';
 import type { EventResult, EventStatus, PlayOptions, ReplanPayload } from './types';
+import { withLoading } from '../utils/loading';
 
 export async function runPlayLoop(worldRoot:string,day:string,options:PlayOptions={}):Promise<void>{
   if(!process.env.DEEPSEEK_API_KEY?.trim())throw new Error('DEEPSEEK_API_KEY is not set. Play requires an API key.');
@@ -22,10 +23,15 @@ export async function runPlayLoop(worldRoot:string,day:string,options:PlayOption
   const maxTools=options.maxToolRounds??8;
   const maxRounds=options.maxEventRounds??20;
   try{
-    buildPlayContext(worldRoot,day,contextRoot);
-    gateway=await connectOrStartGateway(serviceRoot,contextRoot,options.mcpBaseUrl,options.mcpToken);
-    await exportReadonlyTools(gateway.baseUrl,gateway.token,toolsFile);
-    await assertAllowedPlayerContextRoot(gateway.baseUrl,gateway.token,contextRoot,serviceRoot);
+    await withLoading('正在准备游玩上下文...',async loading=>{
+      buildPlayContext(worldRoot,day,contextRoot);
+      loading.update('正在启动只读服务...');
+      gateway=await connectOrStartGateway(serviceRoot,contextRoot,options.mcpBaseUrl,options.mcpToken);
+      loading.update('正在准备只读工具...');
+      await exportReadonlyTools(gateway.baseUrl,gateway.token,toolsFile);
+      await assertAllowedPlayerContextRoot(gateway.baseUrl,gateway.token,contextRoot,serviceRoot);
+    });
+    if(!gateway)throw new Error('Failed to initialize readonly gateway');
     while(true){
       const state=loadState(worldRoot,day);
       const plan=loadPlan(worldRoot,day);
@@ -61,7 +67,7 @@ async function generate(worldRoot:string,day:string,plan:any,state:any,beatId:st
   const beat=plan.beats.find((b:any)=>b.id===beatId);
   const id=eventId(state.next_event_number);
   buildPlayContext(worldRoot,day,context);
-  const reply=await callPlayAi('play-event-generator','# Event request\n\nEvent ID: '+id+'\nSource beat: '+JSON.stringify(beat)+'\nCurrent plan: '+JSON.stringify(plan,null,2),tools,base,token,max);
+  const reply=await withLoading('正在生成事件...',()=>callPlayAi('play-event-generator','# Event request\n\nEvent ID: '+id+'\nSource beat: '+JSON.stringify(beat)+'\nCurrent plan: '+JSON.stringify(plan,null,2),tools,base,token,max));
   const event=parseGeneratedEvent(reply);
   validateGeneratedEvent(event,id,beatId);
   beat.status='active';
@@ -122,7 +128,7 @@ async function resolveEvent(worldRoot:string,day:string,id:string,beatId:string,
   else{
     buildPlayContext(worldRoot,day,context);
     const status=JSON.stringify(finalStatus,null,2);
-    const reply=await callPlayAi('play-event-resolver','# Event\n'+fs.readFileSync(path.join(dir,'event.json'),'utf8')+'\n# Final event status\n'+status+'\n# Current plan\n'+JSON.stringify(plan,null,2)+'\n# Transcript\n'+fs.readFileSync(path.join(dir,'transcript.md'),'utf8'),tools,base,token,max);
+    const reply=await withLoading('正在整理事件结果...',()=>callPlayAi('play-event-resolver','# Event\n'+fs.readFileSync(path.join(dir,'event.json'),'utf8')+'\n# Final event status\n'+status+'\n# Current plan\n'+JSON.stringify(plan,null,2)+'\n# Transcript\n'+fs.readFileSync(path.join(dir,'transcript.md'),'utf8'),tools,base,token,max));
     result=parseEventResult(reply);
   }
   if(finalStatus.end_day)result.end_day=true;
@@ -150,7 +156,7 @@ async function replan(worldRoot:string,day:string,id:string,beatId:string,tools:
       buildPlayContext(worldRoot,day,context);
       const validBeatIds=plan.beats.map(beat=>beat.id);
       const remainingInsertSlots=Math.max(0,plan.max_events-plan.beats.length);
-      const reply=await callPlayAi('play-replanner','# Replan constraints\nValid existing beat IDs: '+validBeatIds.join(', ')+'\nRemaining insert slots: '+remainingInsertSlots+'\ninsert.after may only use a valid existing beat ID. New beat IDs are assigned by the system and cannot be referenced.\n\n# Current plan\n'+JSON.stringify(plan,null,2)+'\n# Event result\n'+JSON.stringify(result,null,2),tools,base,token,max);
+      const reply=await withLoading('正在更新后续计划...',()=>callPlayAi('play-replanner','# Replan constraints\nValid existing beat IDs: '+validBeatIds.join(', ')+'\nRemaining insert slots: '+remainingInsertSlots+'\ninsert.after may only use a valid existing beat ID. New beat IDs are assigned by the system and cannot be referenced.\n\n# Current plan\n'+JSON.stringify(plan,null,2)+'\n# Event result\n'+JSON.stringify(result,null,2),tools,base,token,max));
       proposed=parseReplan(reply);
     }
     const normalized=normalizeReplanPayload(proposed,plan);
