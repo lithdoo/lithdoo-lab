@@ -24,15 +24,13 @@
 ```text
 React CLI
   > [promptpile-react] TOML（--config 指定文件）
-  > PROMPTPILE_REACT_*（扫描目录 .env → cwd .env → process.env）
   > [promptpile] TOML 同名共享键（仅 dir / quiet / tools_file / continue / input / after_hook / llm_api / llm_api_temperature / llm_api_extra_body 作默认 profile）
-  > PROMPTPILE_* / TOOLS_FILE 等（扫描目录 .env → cwd .env → process.env）
   > 内置默认
 ```
 
 - **仅 react 消费**：`max_step`、`thought_prompt` / `observe_prompt` / `check_prompt` / `final_prompt`、分阶段 `*_llm_api` / `*_llm_api_temperature` / `*_llm_api_extra_body`（含 `check_*`）等；合并后经 `buildPhaseArgv` 向子进程传 `-m/-k/-b/--temperature` 及可选 `--extra-body`（JSON 字符串）。
 - **不读取、不转发**：`[promptpile]` 的 `output`、`tool_choice`、`disable_tool`、`insert_files`、`append_files`（ReAct 各阶段在代码里固定行为：Observe 全量目录 + `--append-files` + `-o` 纯文本；Check 空目录 + `--insert-files`（check + observe 正文）+ `react_check_decision`；Final `--disable-tool`；Thought/Final 用 `--insert-files`）。
-- 示例：[`example.toml`](example.toml)、[`example.env`](example.env)、[`example.sh`](example.sh)。
+- 普通配置不从 `.env` 或 `process.env` 读取；密钥仍可由 TOML `api_key_env` 引用指定环境变量。示例见 [`example.toml`](example.toml)、[`example.sh`](example.sh)。
 
 ## 编排调试（`PROMPTPILE_REACT_DEBUG`）
 
@@ -51,7 +49,7 @@ React CLI
 
 在 **扫描目录**（`-d` / `dir` 解析后的绝对路径）下读取提示词，优先级：
 
-1. TOML / env：`thought_prompt`、`observe_prompt`、`check_prompt`、`final_prompt`（相对扫描目录）
+1. TOML：`thought_prompt`、`observe_prompt`、`check_prompt`、`final_prompt`（相对扫描目录）
 2. 回退：`.react.core.md`、`.react.observe.md`、`.react.check.md`、`.react.final.md`
 3. `core` / `observe` / `check` 仍缺省则用内置中文默认；`final` 空白则跳过 Final 子进程
 
@@ -125,7 +123,7 @@ React CLI
 | **after-hook** | 本轮 argv **不带** `--after-hook-path`（与转发中显式传入的 hook 解绑），避免 Final 成功后再跑 after-hook。 |
 | **`-c`** | `continueMode` 为真时在本轮 argv 末尾追加 `-c`（与 Thought 一致；Observe 不传 `-c`）。 |
 
-`promptpile` 在 **`--disable-tool`** 下会忽略 **`TOOLS_FILE`** 与扫描目录默认 **`.tools.*`**，无需本包 unset 子进程环境。
+`promptpile` 在 **`--disable-tool`** 下会忽略 `--tools-file`，且不会扫描默认 `.tools.*`，无需本包 unset 子进程环境。
 
 ## `-i` / `-c`（终端输入）
 
@@ -153,12 +151,12 @@ npm run build
 | 选项 | 说明 |
 |------|------|
 | `--config <path>` | 读取 `[[llm_api]]`、`[promptpile-react]`；共享键可回退 `[promptpile]`（见上文合并顺序） |
-| `-d, --directory <path>` | 消息扫描目录（覆盖 TOML/env） |
+| `-d, --directory <path>` | 消息扫描目录（覆盖 TOML） |
 | `-m, --model` / `-k, --api-key` / `-b, --api-base-url` | 覆盖**所有阶段** LLM（当次 CLI 最高优先级） |
 | `--temperature <n>` | 覆盖**所有阶段**采样温度（`0`–`2`）；子进程传 `--temperature`；未设时默认 **0.8** |
 | `--extra-body <json>` | 覆盖**所有阶段**额外请求体字段；子进程传 `--extra-body`（JSON 字符串）；未设则不传 |
 | `-q, --quiet` | 子进程带 `-q`；本进程不转发子进程 stdout/stderr |
-| `--tools-file <path>` | Thought 阶段 tools（CLI 路径相对 **cwd**，覆盖 TOML/env） |
+| `--tools-file <path>` | Thought 阶段 tools（CLI 路径相对 **cwd**，覆盖 TOML） |
 | `--after-hook-path <path>` | **仅 Thought** 阶段；CLI 相对 cwd |
 | `-i, --input` | 本进程写 user 消息，不传 `promptpile -i` |
 | `-c, --continue` | **Thought / Final** 子进程 argv 含 `-c`（Observe 不含）；与 `-i` 同时可外层循环读终端 |

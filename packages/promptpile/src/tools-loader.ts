@@ -210,16 +210,16 @@ export type LoadToolsParams = {
   directory: string;
   cwd: string;
   toolsFileCli?: string;
-  toolsFileEnv?: string;
+  toolsFileConfig?: string;
 };
 
 /**
  * Load tools from an explicit `.toml` path only (no JSONL, no scan-directory defaults).
- * Priority: `toolsFileCli` (relative to cwd) > `toolsFileEnv` (relative to scan root).
+ * Priority: `toolsFileCli` (relative to cwd) > `toolsFileConfig` from TOML (relative to scan root).
  * Returns `undefined` when neither path is set (caller should require one or `--disable-tool`).
  */
 export const loadTools = (params: LoadToolsParams): ToolDefinition[] | undefined => {
-  const { directory, cwd, toolsFileCli, toolsFileEnv } = params;
+  const { directory, cwd, toolsFileCli, toolsFileConfig } = params;
   const scanAbs = path.resolve(cwd, directory);
 
   if (toolsFileCli) {
@@ -229,10 +229,10 @@ export const loadTools = (params: LoadToolsParams): ToolDefinition[] | undefined
     }
     return loadToolsTomlResolved(abs, new Set(), 0);
   }
-  if (toolsFileEnv) {
-    const abs = resolveExplicitToolsPath(toolsFileEnv, scanAbs);
+  if (toolsFileConfig) {
+    const abs = resolveExplicitToolsPath(toolsFileConfig, scanAbs);
     if (isPromptpileDiagnostic()) {
-      console.error('[promptpile] tools source: TOOLS_FILE / config', abs);
+      console.error('[promptpile] tools source: TOML config', abs);
     }
     return loadToolsTomlResolved(abs, new Set(), 0);
   }

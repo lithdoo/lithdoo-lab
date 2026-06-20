@@ -10,7 +10,7 @@
 
 | 组件 | 职责 |
 |------|------|
-| **promptpile** | 组装消息目录、`loadTools()`（仅显式 `.toml` / `TOOLS_FILE`），调用单次 `chat/completions`；**不执行**工具；工具轨迹见 **`[idx]assistant.calls.jsonl`**（continue）与 **`[idx]assistant.result.jsonl`**，以及 **`-o`** 主输出旁的 **`{basename}.calls.jsonl`**（见 [`after-hook.ts`](../../packages/promptpile/src/after-hook.ts)）。二者后缀同为 `.calls.jsonl`，通过文件名模式区分。 |
+| **promptpile** | 组装消息目录、`loadTools()`（仅显式 `.toml` / TOML `tools_file`），调用单次 `chat/completions`；**不执行**工具；promptpile 对单个完整文件采用临时文件 + rename 原子提交，但不提供跨文件事务或多写入者协调；可用 `missing_tool_results = "warn" | "error" | "ignore"` 控制 calls 缺少 result 时的行为；工具轨迹见 **`[idx]assistant.calls.jsonl`**（continue）与 **`[idx]assistant.result.jsonl`**，以及 **`-o`** 主输出旁的 **`{basename}.calls.jsonl`**（见 [`after-hook.ts`](../../packages/promptpile/src/after-hook.ts)）。二者后缀同为 `.calls.jsonl`，通过文件名模式区分。 |
 | **promptpile-mcp** | 将 MCP `tools/list` 映射为 OpenAI function 形态；可选通过 MCP `tools/call` 执行模型产生的调用；**不修改 promptpile 源码**。 |
 
 **OpenAI 工具条目形状**（与 [`tools-loader.ts`](../../packages/promptpile/src/tools-loader.ts) 一致）：
@@ -111,7 +111,7 @@
 
 **两种模式（互斥）**：
 
-- **目录模式**（未提供 **`--input`**）：递归扫描 **`--dir`** 下所有 **`*.calls.jsonl`**；未指定 **`--dir`** 时与历史行为一致，根目录为 **`process.cwd()`**。
+- **目录模式**（未提供 **`--input`**）：只扫描 **`--dir`** 第一层的 **`*.calls.jsonl`**，不进入任何子目录；未指定 **`--dir`** 时根目录为 **`process.cwd()`**。该行为固定，不提供递归开关。
 - **单文件模式**（提供 **`--input <path>`**）：只处理该文件；须为有效 **`.calls.jsonl`**（去掉后缀后 stem 非空）。**`--output`** 可选：省略时输出为 **`resultAbsPathForCallFile(input, stem)`**（与目录模式配对规则相同）；指定则为该路径写入。**不能与 `--dir` 同时出现**；单独使用 **`--output`** 而无 **`--input`** → 报错退出。
 
 | 参数 | 必填 | 默认值 |
@@ -122,8 +122,28 @@
 | `--output <path>` | 否 | **仅单文件模式**：result 输出路径；省略则默认同目录 **`stem.result.jsonl`** |
 | `--token <secret>` | 否 | 未设置则不发送 `Authorization`；若网关启用了 token，请求 **`POST /v1/calls/exec`** 时带 **`Authorization: Bearer <token>`** |
 | `--overwrite-results` | 否 | 未设置则**仅处理尚无**目标 result；设置后**覆盖**已有 result |
+| `--timeout-ms <ms>` | 否 | 每个 calls 文件请求网关的整体超时；默认 **120000** |
 
-可选后续扩展：`--pattern`、`--concurrency`、`--fail-fast` 等；首版可固定「递归或非递归」策略并在实现与文档中写死。
+调用级并发与失败策略由网关 `[execution]` 统一控制，避免不同 `exec-calls` 客户端对同一常驻会话采用互相冲突的调度策略。
+
+### 3.4 `check`
+
+**作用**：只读检查一个 calls 文件及其同目录配对 result，不连接网关、不执行工具、不修改文件。
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `--input <path>` | 是 | 有效的 `.calls.jsonl` 文件；result 按同目录 `stem.result.jsonl` 配对。 |
+
+状态与退出码：
+
+| 状态 | 退出码 | 含义 |
+|------|--------|------|
+| `complete` | `0` | 每个 call ID 都有且只有一条对应 result；工具执行失败的 result 也算已完成。 |
+| `pending` | `1` | 配对 result 不存在。 |
+| `partial` | `1` | result 存在，但缺少部分 call ID。 |
+| `invalid` | `2` | calls/result JSONL 损坏、字段非法、ID 重复或 result 含未知 ID。 |
+
+`exec-calls` 遇到已有但为 `partial` 或 `invalid` 的 result 时只打印 warning 并跳过。恢复必须由用户显式执行 `exec-calls --input ... --overwrite-results`，该操作整批重新执行并原子替换 result。
 
 ---
 
@@ -135,7 +155,8 @@
 
 - **`version`**：可选，缺省为 **1**。非 **1** 时 **`console.warn`**（未来 schema）。须为正整数。
 - **`[gateway].port`**：可为 **整数**、**有限数字**（向下取整）或 **纯数字字符串**（如 JSON 中的 `"8765"`）；范围 **1–65535**，非法则 **`launch` 读配置失败**。
-- **`[behavior].failure_policy`**：仅允许 **`strict`** 或 **`best-effort`**；其它值报错。
+- **`[behavior].failure_policy`**：仅允许 **`strict`** 或 **`best-effort`**；其它值报错；只控制 MCP server 启动阶段。
+- **`[execution].failure_policy`**：仅允许 **`continue`** 或 **`fail_fast`**；其它值报错。`concurrency`、`call_timeout_ms`、`retry_max_attempts` 须为正整数，`retry_base_delay_ms` 须为非负整数，`retry_safe_tools` 须为非空字符串数组。
 - **`[servers.*].transport`**：可选；仅支持 **`stdio`**（缺省即 stdio）；**`http`** 等键入即报错（尚未实现）。
 - **`[servers.*].env`**：值为 **`string` / `number` / `boolean`** 时分别写入子进程环境（数字与布尔会转为字符串）；其它类型跳过并 **`console.warn`**。
 
@@ -156,6 +177,14 @@ list_timeout_ms = 30000
 [behavior]
 failure_policy = "best-effort"  # strict | best-effort
 flat_names = false              # true 时不加 mcp__<id>__ 前缀（不推荐默认开启）
+
+[execution]
+concurrency = 4
+call_timeout_ms = 60000
+failure_policy = "continue"      # continue | fail_fast
+retry_max_attempts = 1          # 1 表示不重试
+retry_base_delay_ms = 250
+retry_safe_tools = ["mcp__filesystem__read_file"]
 
 [servers.filesystem]
 command = "npx"
@@ -184,6 +213,19 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 | **strict** | 任一 server `initialize` / `tools/list` 失败 → **launch 启动失败**（或网关标记不可用，实现二选一，建议启动阶段即失败）。 |
 | **best-effort** | 失败 server 跳过并记录日志；至少一个 server 成功则网关可用；导出/执行时仅针对健康 server。 |
 
+### 4.4 Calls 执行策略
+
+| 字段 | 默认值 | 语义 |
+|------|--------|------|
+| `concurrency` | `4` | 单批 calls 的最大并发数；响应顺序始终与输入顺序一致。 |
+| `call_timeout_ms` | `60000` | 单个 MCP `tools/call` 的截止时间。 |
+| `failure_policy` | `continue` | `continue` 执行全部调用；`fail_fast` 在首个失败后停止调度新调用，已开始的调用继续收尾。 |
+| `retry_max_attempts` | `1` | 每个调用的最大尝试次数；`1` 表示关闭重试。 |
+| `retry_base_delay_ms` | `250` | 指数退避基数；第 N 次重试前等待 `base * 2^(N-1)`。 |
+| `retry_safe_tools` | `[]` | 可安全重试的网关工具名精确列表；名称应与 `.calls.jsonl` / 导出工具名一致。 |
+
+重试采用保守白名单：仅对白名单工具的超时和瞬时传输故障重试；参数错误、路由错误、server down、MCP `isError` 业务失败以及主动取消均不重试。CLI 的 `--timeout-ms` 是一个 calls 文件的 HTTP 总超时，独立于单调用 `call_timeout_ms`。HTTP 客户端断开、CLI 收到 `SIGINT` / `SIGTERM` 或上层 `AbortSignal` 取消时，网关停止调度新调用并向在途 MCP 请求传播取消。
+
 ---
 
 ## 5. HTTP API（网关）
@@ -203,7 +245,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 |------|------|------|
 | `GET` | `/health` | 存活检测；可返回各 MCP server 是否已连接。 |
 | **`GET`** | **`/v1/tools/export`** | **固定使用 GET**（幂等、无副作用）。聚合所有已连接 server 的 `tools/list`，映射为 OpenAI `tools[]`；响应 JSON **`{ "tools": [ … ], "warnings"?: string[] }`**，由 `export-tools` CLI 再转为 `.tools.toml`。网关实现：**Koa**（[`src/http`](./src/http/)）。若 **`mcp.toml`** 含 **`[servers.*]`**，后端为 **`createMcpGatewayBackend`**（[`mcp-backend.ts`](./src/http/mcp-backend.ts)）；**无 `servers`** 时为 **stub**（空 `tools`）。 |
-| `POST` | `/v1/calls/exec` | **请求体**包含单条或多条 tool call（由 exec-calls 本地读取 `.calls.jsonl` 后批量 POST）；**响应**为每条 call 的执行结果。 |
+| `POST` | `/v1/calls/exec` | **请求体**包含单条或多条 tool call（由 exec-calls 本地读取 `.calls.jsonl` 后批量 POST）；网关按 `[execution]` 并发调度；**响应**按输入顺序返回每条 call 的结果，可包含 `attempts` 与 `durationMs`。 |
 
 **exec-calls 与 HTTP 的分工**：
 
@@ -221,7 +263,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 ### 6.1 扫描范围与配对
 
 - **单文件模式**：**`--input`** 指向单个 **`.calls.jsonl`**；输出为 **`--output`** 或默认同目录 **`stem.result.jsonl`**（与下述配对公式一致）。**`--input` 与 `--dir` 互斥**。
-- **目录模式**：**根路径** `exec-calls --dir`（未指定时为 **`cwd`**），**递归**枚举文件。
+- **目录模式**：**根路径** `exec-calls --dir`（未指定时为 **`cwd`**），只枚举该目录第一层的普通文件；子目录完全忽略。
 - **匹配**：basename 以 **`.calls.jsonl`** 结尾（整段后缀；勿用 `path.parse` 以免 `foo.calls.jsonl` 被误切成 `foo.calls`）。
 - **配对**：**`stem`** = basename 去掉 **`.calls.jsonl`**；同目录输出 **`stem + '.result.jsonl'`**。例：**`[0]assistant.calls.jsonl`** → **`[0]assistant.result.jsonl`**；**`out.calls.jsonl`** → **`out.result.jsonl`**。
 - **非法名**：**`.calls.jsonl`**（空 stem）跳过并向 **stderr** 警告。
@@ -234,7 +276,20 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 
 ### 6.3 写回
 
-执行成功后写入配对 **`stem.result.jsonl`**（每行与 promptpile 的 `ToolResultLine` 对齐）；失败策略：**逐条记录错误**、可选 **`--fail-fast`** 使整个 `exec-calls` 非零退出。
+收到完整 HTTP 响应后，`exec-calls` 原子写入配对 **`stem.result.jsonl`**（基础字段与 promptpile 的 `ToolResultLine` 对齐）：先在同目录写唯一临时文件并 `fsync`，再通过 `rename` 提交；提交失败会清理临时文件，不留下半截正式结果。若 CLI 被取消、HTTP 总超时或连接中断，则该 calls 文件不提交 result。单条执行失败仍作为对应工具结果写回；调用级 `continue | fail_fast` 由网关 `[execution].failure_policy` 控制。
+
+每行保留 `tool_call_id`、`content`、可选 `name`，并增加工具级 `execution` 对象：
+
+```json
+{"tool_call_id":"call_1","content":"...","name":"mcp__fs__read_file","execution":{"ok":true,"attempts":1,"duration_ms":12}}
+```
+
+- `ok`：该工具调用是否成功。
+- `attempts`：实际尝试次数；因 `fail_fast` 未调度或网关缺失结果时为 `0`。
+- `duration_ms`：包括重试等待在内的调用总耗时。
+- `error`：仅失败时出现，保存机器可读或后端返回的失败原因。
+
+`execution` 是向后兼容扩展；promptpile 当前回放只读取基础字段并忽略额外字段。
 
 ---
 
@@ -253,7 +308,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 
 1. **启动网关**：`promptpile-mcp launch --config mcp.toml …`
 2. **生成工具文件**：`promptpile-mcp export-tools --base-url http://127.0.0.1:<port> [-o .tools.toml]`
-3. **运行补全**：`promptpile --tools-file .tools.toml …`（或 `TOOLS_FILE`）
+3. **运行补全**：`promptpile --tools-file .tools.toml …`（或 TOML `tools_file`）
 4. **执行工具**（模型返回 `tool_calls` 后）：`promptpile-mcp exec-calls --base-url http://127.0.0.1:<port> [--dir <消息或项目根>]` 或 `exec-calls --base-url … --input <路径.calls.jsonl> [--output <路径.result.jsonl>]`
 
 **After-hook**：可在 `.after-hook.sh` 等脚本中调用 `exec-calls`，环境变量可使用 `PROMPTPILE_CALLS_FILE`、`PROMPTPILE_SCAN_DIRECTORY`（见 `buildPromptpileHookEnv`），将 `base-url` 写死或通过环境变量传入。
@@ -284,7 +339,12 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 
 - 初版：三命令定名为 **`launch`**、**`export-tools`**、**`exec-calls`**；launch 的 `port` / `token` 合并规则；export / exec 的默认路径；HTTP 网关架构。
 - **`exec-calls` 首版**：仅处理 **`[N]assistant.calls.jsonl`**（与 promptpile continue 侧文件名一致；与 **`-o`** 旁 **`{basename}.calls.jsonl`** 通过 **`^\[(\d+)\]assistant\.calls\.jsonl$`** 模式区分）；写 **`[N]assistant.result.jsonl`**；其它 **`*.calls.jsonl`** 跳过并 stderr 提示。
-- **continue 文件名**：**`[N]assistant.call.jsonl`** 统一重命名为 **`[N]assistant.calls.jsonl`**（破坏性变更；旧名不再识别）。
+- **continue 文件名契约**：统一使用 **`[N]assistant.calls.jsonl`** 记录该轮 assistant 的工具调用。
 - **`exec-calls` 配对 generalized**：任意 **`*.calls.jsonl`** → 同目录 **`stem.result.jsonl`**；默认跳过已有 result；**`--overwrite-results`** 覆盖。
 - **`exec-calls` 单文件模式**：新增 **`--input`** / **`--output`**；与 **`--dir`** 互斥。
+- **result 原子写入**：`exec-calls` 的默认配对输出和 `--output` 均采用同目录临时文件 + `fsync` + `rename`，失败时清理临时文件。
+- **calls 执行控制**：网关新增有限并发、单调用超时、`continue | fail_fast`、取消传播，以及显式安全工具白名单下的瞬时故障指数退避重试；CLI 新增每个 calls 文件的 `--timeout-ms` HTTP 总超时。
+- **非递归目录扫描**：`exec-calls --dir` 固定只扫描目录第一层，不进入子目录，也不提供递归参数。
+- **工具级执行元数据**：每条 result 新增 `execution.ok`、`attempts`、`duration_ms`，失败时附带 `error`。
+- **显式状态检查**：新增 `check --input`，区分 `pending | partial | complete | invalid`；不自动恢复，已有不完整 result 仅 warning，由用户通过 `--overwrite-results` 手动整批重试。
 - **结项**：**`package.json`** 升至 **0.1.0**；**DESIGN §10** 区分「stdio 已实现」与「远端 HTTP MCP 客户端未实现」；**after-hook** 示例见 **`docs/after-hook.example.sh`**。

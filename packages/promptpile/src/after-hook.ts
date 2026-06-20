@@ -6,13 +6,22 @@ import type { ToolCall } from './types';
 export type ResolveAfterHookResult =
   | { status: 'run'; path: string }
   | { status: 'skip' }
-  | { status: 'warn_missing_explicit'; attempted: string };
+  | { status: 'warn_invalid_explicit'; attempted: string; reason: string };
 
-const isRegularFile = (p: string): boolean => {
+const resolveRegularFile = (candidate: string):
+  | { ok: true; realPath: string }
+  | { ok: false; reason: string } => {
   try {
-    return fs.existsSync(p) && fs.statSync(p).isFile();
-  } catch {
-    return false;
+    const realPath = fs.realpathSync(candidate);
+    if (!fs.statSync(realPath).isFile()) {
+      return { ok: false, reason: 'not a regular file' };
+    }
+    return { ok: true, realPath };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error)
+    };
   }
 };
 
@@ -22,35 +31,53 @@ const defaultHookFilenames = (): string[] =>
     : ['.after-hook.sh'];
 
 /**
- * Resolve which hook script to run: CLI path (relative cwd) > env path (relative scan dir) > OS default names in scan dir.
+ * Resolve which hook script to run: CLI path (relative cwd) > TOML path (relative scan dir).
+ * Default names in the scan directory are considered only with explicit CLI opt-in.
  */
 export const resolveAfterHookScript = (options: {
   cwd: string;
   scanAbs: string;
   afterHookCli?: string;
-  afterHookEnv?: string;
+  afterHookConfig?: string;
+  allowDefaultAfterHook?: boolean;
 }): ResolveAfterHookResult => {
-  const { cwd, scanAbs, afterHookCli, afterHookEnv } = options;
+  const {
+    cwd,
+    scanAbs,
+    afterHookCli,
+    afterHookConfig,
+    allowDefaultAfterHook = false
+  } = options;
 
   const tryExplicit = (raw: string, base: string): ResolveAfterHookResult => {
     const candidate = path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(base, raw);
-    if (isRegularFile(candidate)) {
-      return { status: 'run', path: candidate };
+    const resolved = resolveRegularFile(candidate);
+    if (resolved.ok) {
+      return { status: 'run', path: resolved.realPath };
     }
-    return { status: 'warn_missing_explicit', attempted: candidate };
+    return {
+      status: 'warn_invalid_explicit',
+      attempted: candidate,
+      reason: resolved.reason
+    };
   };
 
   if (afterHookCli) {
     return tryExplicit(afterHookCli, cwd);
   }
-  if (afterHookEnv) {
-    return tryExplicit(afterHookEnv, scanAbs);
+  if (afterHookConfig) {
+    return tryExplicit(afterHookConfig, scanAbs);
+  }
+
+  if (!allowDefaultAfterHook) {
+    return { status: 'skip' };
   }
 
   for (const name of defaultHookFilenames()) {
-    const p = path.join(scanAbs, name);
-    if (isRegularFile(p)) {
-      return { status: 'run', path: p };
+    const candidate = path.join(scanAbs, name);
+    const resolved = resolveRegularFile(candidate);
+    if (resolved.ok) {
+      return { status: 'run', path: resolved.realPath };
     }
   }
   return { status: 'skip' };

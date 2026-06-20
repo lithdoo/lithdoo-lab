@@ -8,6 +8,8 @@
 - Run from this folder with `run-example.bat`
 - Ensure Bun is installed
 
+模型、API 地址、消息目录和工具文件由 [`promptpile.toml`](promptpile.toml) 显式配置；`.env` 仅供示例脚本和 agent-lite web 工具读取，不再作为 promptpile 自身的配置层。
+
 ## 生成 tools.toml
 
 1. 在仓库 `example/` 目录安装依赖（使用共享的 `example/package.json`）：
@@ -55,12 +57,11 @@ bun promptpile-tool-test/scripts/generate-tool-results.ts
 ## Behavior（chat-loop 风格）
 
 - 若 `.env` 不存在则从 `.env.example` 同步。
-- 脚本将 `%DEEPSEEK_API_KEY%` 注入为 `AI_API_KEY`。
 - 若 `messages/.tools.toml` 不存在，会先自动在 `example/` 下执行 `bun promptpile-tool-test\scripts\generate-tools-toml.ts` 生成。
 - 进入 `:loop`，每轮执行：
 
   ```bat
-  npx promptpile --input --continue --after-hook-path "after-hook.bat"
+  npx promptpile --config promptpile.toml --input --continue --after-hook-path "after-hook.bat"
   ```
 
   - `--input`：在终端读取本轮 user 消息（结尾用 Ctrl+Z 后回车），落盘成 `messages/[N]user.md`。

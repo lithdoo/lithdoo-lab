@@ -3,7 +3,7 @@ import type { ChatApiToolChoice, ToolDefinition } from './types';
 const FUNCTION_PREFIX = /^function:/i;
 
 /**
- * Parse CLI/env `TOOL_CHOICE` raw string into an OpenAI-shaped `tool_choice` value.
+ * Parse CLI `--tool-choice` raw string into an OpenAI-shaped `tool_choice` value.
  * @throws Error if the string is non-empty but invalid.
  */
 export const parseToolChoiceInput = (raw: string | undefined): ChatApiToolChoice => {
@@ -30,13 +30,13 @@ export const parseToolChoiceInput = (raw: string | undefined): ChatApiToolChoice
   if (m) {
     const name = s.slice(m[0].length).trim();
     if (!name) {
-      throw new Error('Invalid --tool-choice / TOOL_CHOICE: function:<name> requires a non-empty name.');
+      throw new Error('Invalid --tool-choice: function:<name> requires a non-empty name.');
     }
     return { type: 'function', function: { name } };
   }
 
   throw new Error(
-    `Invalid --tool-choice / TOOL_CHOICE: "${raw}". Expected none | auto | required | function:<name>.`
+    `Invalid --tool-choice: "${raw}". Expected none | auto | required | function:<name>.`
   );
 };
 

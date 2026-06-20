@@ -8,7 +8,7 @@ Run `promptpile` with `--config promptpile.toml` and `--input --continue` in a s
   - Set the **User** or **System** environment variable `DEEPSEEK_API_KEY` in Windows, **or**
   - Create a **`.env`** file in this folder (not tracked by git) with one line: `DEEPSEEK_API_KEY=sk-...`
 - **`setx`** writes the registry but **does not** update the **current** terminal; open a **new** `cmd` window after `setx`.
-- **`run-example.bat`** reads `.env` only to inject `DEEPSEEK_API_KEY` into the current `cmd` session (plain `cmd.exe` does not load `.env` automatically). The `promptpile` process also loads `.env` from this directory when present.
+- **`run-example.bat`** reads `.env` only to inject `DEEPSEEK_API_KEY` into the current `cmd` session (plain `cmd.exe` does not load `.env` automatically). `promptpile` itself does not load `.env`; its TOML uses `api_key_env = "DEEPSEEK_API_KEY"`.
 - Run from this folder with `run-example.bat`
 - Do **not** commit API keys. Configuration that is safe to version lives in **`promptpile.toml`**.
 

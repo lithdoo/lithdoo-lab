@@ -20,12 +20,12 @@
 
 ### 1. 工具 `.toml`（显式路径，可含 `extends`）
 
-- **入口**：`--tools-file` / `TOOLS_FILE` / 配置中的 `tools_file`；不再依赖会话目录默认文件名。
+- **入口**：`--tools-file` / 配置中的 `tools_file`；不再依赖会话目录默认文件名。
 - **内容**：根表 `extends` + `[[tools]]` 扁平条目；见 README。
 
 ### 2. 主输出与调用记录：`{basename}.calls.jsonl`
 
-- **前提**：仅当用户使用 **`-o` / `OUTPUT_FILE`** 指定主输出文件时，才写调用记录文件。
+- **前提**：仅当用户使用 **`-o` / 配置中的 `output`** 指定主输出文件时，才写调用记录文件。
 - **路径**：与主输出 **同目录、同 basename**：若主输出为 `out/answer.txt`，则调用记录为 `out/answer.calls.jsonl`（即去掉「主文件扩展名」后统一加 `.calls.jsonl`，或等价规则：**与主输出共享 basename，后缀固定为 `.calls.jsonl`**——实现时与 `path.basename` 语义一致并写入 README）。
 - **未使用 `-o`**：只向 **stdout** 输出模型正文；**不写** `{basename}.calls.jsonl`。
 

@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import fs from 'fs';
+import { atomicWriteFileSync } from './atomic-file';
 import path from 'path';
 import type { ToolCall } from './types';
 
@@ -34,7 +34,7 @@ export const redactHeaders = (headers: Record<string, string>): Record<string, s
 
 const writeJsonQuiet = (filePath: string, data: unknown): void => {
   try {
-    fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    atomicWriteFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[promptpile] llm-dump: failed to write ${filePath}: ${msg}`);

@@ -20,6 +20,7 @@
 # --output=./message/promptpile-example-output.md — output 写文件路径（TOML 为 true 时请改为具体路径）。
 # （quiet=false 不传 --quiet；为 true 时追加 --quiet）
 # --after-hook-path=./after_hook.sh — after_hook，成功后脚本路径（CLI 相对 cwd）。
+# --allow-default-after-hook — 仅当未显式配置 hook 时，允许发现消息目录根的默认 .after-hook.*；默认关闭。
 # --tool-choice=auto — tool_choice。
 # --tools-file=./.tools.toml — tools_file（CLI 相对 cwd）；仅 .toml，文件内可写 extends
 # （disable_tool=false 不传 --disable-tool；为 true 时追加 --disable-tool）
@@ -32,4 +33,4 @@
 # --extra-body='{"top_p":0.9}' — llm_api_extra_body，JSON 字符串，合并进请求体；未设置则不传。
 # --api-key= — llm_api_key。
 # --api-base-url= — llm_api_base_url。
-# （llm_api 选用哪档 profile、llm_api_key_env 从其它环境变量名取密钥：无单独 CLI 时由 --config 读 TOML 或见 example.env 中 PROMPTPILE_LLM_*）
+# （llm_api 选用哪档 profile、llm_api_key_env 从其它环境变量名取密钥：无单独 CLI 时由 --config 读 TOML 普通配置不再从环境变量读取）

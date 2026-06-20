@@ -11,8 +11,12 @@ const { buildPhaseArgv } = require(path.join(root, 'dist', 'build-phase-argv.js'
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ppr-cfg-'));
 const prevCwd = process.cwd();
+const envKeys = ['PROMPTPILE_REACT_MAX_STEP', 'DEEPSEEK_API_KEY'];
+const envBefore = new Map(envKeys.map(key => [key, process.env[key]]));
 try {
   process.chdir(tmp);
+  process.env.PROMPTPILE_REACT_MAX_STEP = '5';
+  process.env.DEEPSEEK_API_KEY = 'secret-from-named-env';
 
   const msgRel = 'messages';
   const msgAbs = path.join(tmp, msgRel);
@@ -40,7 +44,7 @@ thought_llm_api = "deepseek"
 
   fs.writeFileSync(
     path.join(msgAbs, '.env'),
-    'PROMPTPILE_REACT_MAX_STEP=5\n'
+    'PROMPTPILE_REACT_MAX_STEP=7\n'
   );
 
   const fakeScript = path.join(tmp, 'fake-index.js');
@@ -53,7 +57,8 @@ thought_llm_api = "deepseek"
     'app.toml'
   ]);
   assert.strictEqual(cfg.directoryAbs, msgAbs, 'promptpile-react dir wins over promptpile');
-  assert.strictEqual(cfg.maxStep, 3, 'toml max_step wins over scan .env (CLI > TOML > scan env)');
+  assert.strictEqual(cfg.maxStep, 3, 'toml max_step is used');
+  assert.strictEqual(cfg.phases.thought.apiKey, 'secret-from-named-env', 'TOML api_key_env reads its named environment variable');
 
   fs.writeFileSync(
     tomlPath,
@@ -69,7 +74,7 @@ thought_llm_api = "deepseek"
 `
   );
   const cfgEnvOnly = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
-  assert.strictEqual(cfgEnvOnly.maxStep, 5, 'scan .env applies when toml omits max_step');
+  assert.strictEqual(cfgEnvOnly.maxStep, Number.POSITIVE_INFINITY, 'ordinary process.env max_step is ignored');
 
   const cfgCli = resolveReactConfig(tmp, [
     'node',
@@ -83,6 +88,23 @@ thought_llm_api = "deepseek"
 
   const cfgDefaultTemp = resolveReactConfig(tmp, ['node', fakeScript, '-k', 'key']);
   assert.strictEqual(cfgDefaultTemp.phases.thought.temperature, 0.8, 'default temperature');
+
+  fs.writeFileSync(
+    tomlPath,
+    `
+[promptpile]
+llm_api_temperature = 0.4
+
+[promptpile-react]
+llm_api_temperature = 0.3
+`
+  );
+  const cfgSharedReactTemp = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.strictEqual(
+    cfgSharedReactTemp.phases.thought.temperature,
+    0.3,
+    'promptpile-react shared temperature overrides promptpile shared temperature'
+  );
 
   fs.writeFileSync(
     tomlPath,
@@ -219,6 +241,10 @@ check_llm_api_temperature = 0.25
   assert.ok(!cfgNoExtraArgv.includes('--extra-body'), 'observe argv omits --extra-body when unset');
 } finally {
   process.chdir(prevCwd);
+  for (const [key, value] of envBefore) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 

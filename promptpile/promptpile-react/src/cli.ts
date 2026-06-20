@@ -51,7 +51,7 @@ const buildProgram = (): Command => {
     .option('-c, --continue', 'Append assistant reply to message files (subprocesses append `-c` when set)')
     .option(
       '--tools-file <path>',
-      'Tools .toml path (CLI relative cwd; overrides TOML/env relative scan directory)'
+      'Tools .toml path (CLI relative cwd; overrides TOML path relative to scan directory)'
     )
     .option(
       '--after-hook-path <path>',

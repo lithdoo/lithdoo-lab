@@ -58,6 +58,46 @@ describe('readMcpConfig', () => {
     const c = readMcpConfig(p);
     assert.equal(c.version, 1);
     assert.equal(c.gateway.port, 8080);
+    assert.deepEqual(c.execution, {
+      concurrency: 4,
+      call_timeout_ms: 60_000,
+      failure_policy: "continue",
+      retry_max_attempts: 1,
+      retry_base_delay_ms: 250,
+      retry_safe_tools: [],
+    });
+  });
+
+  it("parses execution policy", () => {
+    const p = path.join(dir, "execution.toml");
+    fs.writeFileSync(
+      p,
+      "[gateway]\nport = 8080\n\n[execution]\nconcurrency = 8\ncall_timeout_ms = 5000\nfailure_policy = \"fail_fast\"\nretry_max_attempts = 3\nretry_base_delay_ms = 10\nretry_safe_tools = [\"mcp__fs__read_file\"]\n",
+    );
+    assert.deepEqual(readMcpConfig(p).execution, {
+      concurrency: 8,
+      call_timeout_ms: 5_000,
+      failure_policy: "fail_fast",
+      retry_max_attempts: 3,
+      retry_base_delay_ms: 10,
+      retry_safe_tools: ["mcp__fs__read_file"],
+    });
+  });
+
+  it("rejects invalid execution settings", () => {
+    const cases = [
+      "concurrency = 0",
+      "call_timeout_ms = 0",
+      "failure_policy = \"oops\"",
+      "retry_max_attempts = 0",
+      "retry_base_delay_ms = -1",
+      "retry_safe_tools = [\"\"]",
+    ];
+    for (const [index, setting] of cases.entries()) {
+      const p = path.join(dir, "bad-execution-" + index + ".toml");
+      fs.writeFileSync(p, "[gateway]\nport = 8080\n\n[execution]\n" + setting + "\n");
+      assert.throws(() => readMcpConfig(p), /execution/);
+    }
   });
 
   it('warns when version is not 1', () => {

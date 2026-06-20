@@ -116,11 +116,16 @@ export class StdioMcpSession {
   async callTool(
     name: string,
     args: Record<string, unknown>,
+    options?: { signal?: AbortSignal; timeoutMs?: number },
   ): Promise<Awaited<ReturnType<NonNullable<StdioMcpSession['client']>['callTool']>>> {
-    const ms = this.rpcMs();
+    const ms = options?.timeoutMs ?? this.rpcMs();
     const c = this.requireClient();
     return raceWithTimeout(
-      c.callTool({ name, arguments: args }, undefined, { timeout: ms, maxTotalTimeout: ms }),
+      c.callTool(
+        { name, arguments: args },
+        undefined,
+        { timeout: ms, maxTotalTimeout: ms, signal: options?.signal },
+      ),
       ms,
       'MCP callTool',
     );

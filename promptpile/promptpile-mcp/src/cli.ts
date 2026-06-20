@@ -1,6 +1,7 @@
 import path from 'path';
 import { Command } from 'commander';
 import { assertHttpUrl, parsePortArg } from './cli-shared';
+import { runCheck } from './commands/check';
 import { runExecCalls } from './commands/exec-calls';
 import { runExportTools } from './commands/export-tools';
 import { runLaunch } from './commands/launch';
@@ -17,7 +18,7 @@ export async function parseCli(): Promise<number> {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
     console.error(
-      'promptpile-mcp: 请指定子命令：launch | export-tools | exec-calls'
+      'promptpile-mcp: 请指定子命令：launch | export-tools | exec-calls | check'
     );
     console.error('运行 promptpile-mcp --help 查看帮助。');
     return 1;
@@ -27,7 +28,7 @@ export async function parseCli(): Promise<number> {
   const program = new Command()
     .name('promptpile-mcp')
     .description(
-      'promptpile 的 MCP 适配：launch 在本机启动 HTTP 网关（可选 stdio MCP）；export-tools 拉取工具为 .tools.toml；exec-calls 执行 *.calls.jsonl。'
+      'promptpile 的 MCP 适配：launch 在本机启动 HTTP 网关（可选 stdio MCP）；export-tools 拉取工具为 .tools.toml；exec-calls 执行 *.calls.jsonl；check 检查 calls/result 状态。'
     )
     .version('0.1.0')
     .helpOption('-h, --help', '显示帮助');
@@ -103,6 +104,14 @@ export async function parseCli(): Promise<number> {
     });
 
   program
+    .command('check')
+    .description('检查一个 calls 文件及其配对 result 的执行状态')
+    .requiredOption('--input <path>', '要检查的 .calls.jsonl 文件')
+    .action(async (opts: { input: string }) => {
+      exitCode = await runCheck({ input: opts.input });
+    });
+
+  program
     .command('exec-calls')
     .description(
       '经网关执行 tool calls：目录模式扫描 --dir 下 *.calls.jsonl，或单文件模式 --input'
@@ -113,7 +122,7 @@ export async function parseCli(): Promise<number> {
     )
     .option(
       '--dir <path>',
-      '目录模式：递归扫描 *.calls.jsonl（与 --input 互斥；未指定时默认当前工作目录）'
+      '目录模式：仅扫描当前目录第一层的 *.calls.jsonl（与 --input 互斥；未指定时默认当前工作目录）'
     )
     .option(
       '--input <path>',
@@ -131,6 +140,7 @@ export async function parseCli(): Promise<number> {
       '--overwrite-results',
       '覆盖已存在的 stem.result.jsonl（默认仅处理尚无配对 result 的 *.calls.jsonl）'
     )
+    .option('--timeout-ms <ms>', '每个 calls 文件请求网关的整体超时（默认 120000）', '120000')
     .action(
       async (opts: {
         baseUrl: string;
@@ -139,11 +149,18 @@ export async function parseCli(): Promise<number> {
         output?: string;
         token?: string;
         overwriteResults?: boolean;
+        timeoutMs: string;
       }) => {
         try {
           assertHttpUrl(opts.baseUrl);
         } catch (e) {
           console.error(e instanceof Error ? e.message : String(e));
+          exitCode = 1;
+          return;
+        }
+        const timeoutMs = Number(opts.timeoutMs);
+        if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+          console.error('promptpile-mcp: --timeout-ms 须为正整数');
           exitCode = 1;
           return;
         }
@@ -154,6 +171,7 @@ export async function parseCli(): Promise<number> {
           output: opts.output,
           token: opts.token,
           overwriteResults: opts.overwriteResults === true,
+          requestTimeoutMs: timeoutMs,
         });
       }
     );

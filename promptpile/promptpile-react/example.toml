@@ -18,7 +18,7 @@
 
 [promptpile]
     dir = './message'
-    output = true
+    output = './message/output.md'
     quiet = false
     after_hook = './after_hook.sh'
     tool_choice = 'auto'

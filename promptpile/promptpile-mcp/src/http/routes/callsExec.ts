@@ -36,6 +36,19 @@ export function registerCallsExec(router: Router, backend: GatewayBackend): void
       }
     }
     const calls = raw as ExecCallItem[];
-    ctx.body = await backend.execCalls(calls);
+    const controller = new AbortController();
+    const abort = (): void =>
+      controller.abort(new Error('http_client_disconnected'));
+    const onClose = (): void => {
+      if (!ctx.res.writableEnded) abort();
+    };
+    ctx.req.once('aborted', abort);
+    ctx.res.once('close', onClose);
+    try {
+      ctx.body = await backend.execCalls(calls, { signal: controller.signal });
+    } finally {
+      ctx.req.removeListener('aborted', abort);
+      ctx.res.removeListener('close', onClose);
+    }
   });
 }

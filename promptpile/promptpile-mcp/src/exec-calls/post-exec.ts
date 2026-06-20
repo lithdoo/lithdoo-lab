@@ -4,8 +4,32 @@ export type ExecCallsHttpBody = {
   results: ExecCallResult[];
 };
 
-const FETCH_TIMEOUT_MS = 60_000;
 const BODY_SNIPPET_MAX = 500;
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+
+function requestSignal(
+  parent: AbortSignal | undefined,
+  timeoutMs: number
+): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error('request_timeout')),
+    timeoutMs
+  );
+  const onAbort = (): void =>
+    controller.abort(parent?.reason ?? new Error('cancelled'));
+
+  if (parent?.aborted) onAbort();
+  else parent?.addEventListener('abort', onAbort, { once: true });
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timer);
+      parent?.removeEventListener('abort', onAbort);
+    },
+  };
+}
 
 export function truncateBody(text: string): string {
   if (text.length <= BODY_SNIPPET_MAX) return text;
@@ -15,7 +39,8 @@ export function truncateBody(text: string): string {
 export async function postExecCalls(
   baseUrl: string,
   token: string | undefined,
-  calls: ExecCallItem[]
+  calls: ExecCallItem[],
+  options?: { signal?: AbortSignal; timeoutMs?: number }
 ): Promise<{ ok: boolean; status: number; bodyText: string }> {
   const url = `${baseUrl}/v1/calls/exec`;
   const headers: Record<string, string> = {
@@ -26,15 +51,22 @@ export async function postExecCalls(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ calls }),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-
-  const bodyText = await res.text();
-  return { ok: res.ok, status: res.status, bodyText };
+  const scoped = requestSignal(
+    options?.signal,
+    options?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  );
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ calls }),
+      signal: scoped.signal,
+    });
+    const bodyText = await res.text();
+    return { ok: res.ok, status: res.status, bodyText };
+  } finally {
+    scoped.dispose();
+  }
 }
 
 export function parseExecCallsResponseBody(bodyText: string): ExecCallsHttpBody {

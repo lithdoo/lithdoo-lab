@@ -45,7 +45,7 @@ echo Input ends with Ctrl+Z then Enter.
 :loop
 echo.
 echo ---- New Round ----
-call npx --prefix "..\..\packages\promptpile" promptpile --input --continue --after-hook-path "after-hook.bat"
+call npx --prefix "..\..\packages\promptpile" promptpile --config "promptpile.toml" --input --continue --after-hook-path "after-hook.bat"
 if errorlevel 1 (
   echo [ERROR] promptpile failed.
   exit /b 1

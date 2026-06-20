@@ -1,5 +1,5 @@
-import fs from 'fs';
 import path from 'path';
+import { atomicWriteUtf8FileSync } from '../atomic-file';
 import type { ExecCallItem, ExecCallResult } from '../http/types';
 import {
   resultAbsPathForCallFile,
@@ -31,9 +31,33 @@ function writeResultLinesToPath(
       ? resultContent(r)
       : `错误：网关未返回 toolCallId=${c.id} 的结果`;
 
-    const row: { tool_call_id: string; content: string; name?: string } = {
+    const execution = r
+      ? {
+          ok: r.ok,
+          attempts: r.attempts ?? 0,
+          duration_ms: r.durationMs ?? 0,
+          ...(r.error !== undefined ? { error: r.error } : {}),
+        }
+      : {
+          ok: false,
+          attempts: 0,
+          duration_ms: 0,
+          error: 'missing_gateway_result',
+        };
+    const row: {
+      tool_call_id: string;
+      content: string;
+      name?: string;
+      execution: {
+        ok: boolean;
+        attempts: number;
+        duration_ms: number;
+        error?: string;
+      };
+    } = {
       tool_call_id: c.id,
       content,
+      execution,
     };
     if (c.function.name) {
       row.name = c.function.name;
@@ -41,15 +65,14 @@ function writeResultLinesToPath(
     lines.push(JSON.stringify(row));
   }
 
-  fs.writeFileSync(
+  atomicWriteUtf8FileSync(
     outPath,
-    lines.length > 0 ? `${lines.join('\n')}\n` : '',
-    'utf8'
+    lines.length > 0 ? `${lines.join('\n')}\n` : ''
   );
 }
 
 /**
- * 写入指定路径的 result JSONL（与 promptpile `ToolResultLine` 对齐）。
+ * 写入指定路径的 result JSONL。基础字段与 promptpile `ToolResultLine` 对齐，`execution` 保存工具级执行元数据。
  */
 export function writeResultJsonlToPath(
   outputAbsPath: string,
@@ -60,7 +83,7 @@ export function writeResultJsonlToPath(
 }
 
 /**
- * 写入与 `callPath` 同目录的 `stem.result.jsonl`（stem 来自 basename 去掉 `.calls.jsonl`），与 promptpile `ToolResultLine` 对齐。
+ * 写入与 `callPath` 同目录的 `stem.result.jsonl`（stem 来自 basename 去掉 `.calls.jsonl`）。
  */
 export function writeResultJsonlForCallsFile(
   callPath: string,

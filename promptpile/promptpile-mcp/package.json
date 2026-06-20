@@ -1,14 +1,14 @@
 {
   "name": "promptpile-mcp",
   "version": "0.1.0",
-  "description": "Promptpile 与 MCP：stdio 会话 + 本机 HTTP 网关（launch / export-tools / exec-calls）",
+  "description": "Promptpile 与 MCP：stdio 会话 + 本机 HTTP 网关（launch / export-tools / exec-calls / check）",
   "main": "dist/src/index.js",
   "bin": {
     "promptpile-mcp": "dist/src/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test dist/src/mcp-config.test.js dist/src/mcp/tool-name.test.js",
+    "test": "npm run build && node --test dist/src/mcp-config.test.js dist/src/mcp/tool-name.test.js dist/src/http/execution.test.js dist/src/exec-calls/check-status.test.js dist/src/exec-calls/post-exec.test.js dist/src/exec-calls/scan-call-files.test.js dist/src/exec-calls/write-result-jsonl.test.js dist/src/commands/exec-calls.test.js",
     "test:smoke": "npm run build && npm run mcp:smoke",
     "prepare": "npm run build",
     "mcp:smoke": "node dist/scripts/mcp-smoke.js",

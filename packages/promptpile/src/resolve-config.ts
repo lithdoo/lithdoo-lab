@@ -2,16 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import type { Config } from './types';
 import { parseCli } from './cli';
-import { loadEnvFile } from './env-file';
 import { loadTomlConfigFile, type ParsedTomlConfig } from './toml-config';
-import { parseBoolEnv, trimEnv } from './config';
-import { coerceExtraBodyValue, parseExtraBodyInput, type ExtraBody } from './llm-extra-body';
+import { coerceExtraBodyValue, type ExtraBody } from './llm-extra-body';
 import {
   coerceTemperatureValue,
   DEFAULT_TEMPERATURE,
   parseTemperatureInput
 } from './llm-sampling';
 import { parseOutputPileFd, parseOutputPileFormat, type OutputPileFormat } from './output-pile';
+import { parseMissingToolResultsPolicy } from './tool-result-policy';
 
 /** Pre-merge shape: booleans use undefined = “本层未写”. */
 interface FlatLayer {
@@ -27,14 +26,15 @@ interface FlatLayer {
   quiet?: boolean;
   continueMode?: boolean;
   inputMode?: boolean;
-  toolsFileEnv?: string;
-  afterHookEnv?: string;
+  toolsFileConfig?: string;
+  afterHookConfig?: string;
   toolChoice?: string;
   insertFiles?: string;
   appendFiles?: string;
   disableTool?: boolean;
   temperature?: number;
   extraBody?: ExtraBody;
+  missingToolResults?: Config['missingToolResults'];
 }
 
 const trim = (v: string | undefined): string | undefined => {
@@ -70,181 +70,11 @@ const getBool = (r: Record<string, unknown>, key: string): boolean | undefined =
     return v;
   }
   if (typeof v === 'string') {
-    return parseBoolEnv(v) ? true : v.trim() === '' ? undefined : false;
+    const normalized = v.trim().toLowerCase();
+    if (normalized === '') return undefined;
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
   }
   return undefined;
-};
-
-const envBool = (val: string | undefined): boolean | undefined => {
-  if (val === undefined || val.trim() === '') {
-    return undefined;
-  }
-  return parseBoolEnv(val);
-};
-
-const mapProcessEnv = (): FlatLayer => {
-  const e = process.env;
-  const out: FlatLayer = {};
-  const d = trimEnv(e.DEFAULT_DIRECTORY) ?? trimEnv(e.PROMPTPILE_DIR);
-  if (d !== undefined) {
-    out.directory = d;
-  }
-  const m = trimEnv(e.AI_MODEL);
-  if (m !== undefined) {
-    out.model = m;
-  }
-  const k = trimEnv(e.AI_API_KEY);
-  if (k !== undefined) {
-    out.apiKey = k;
-  }
-  const kn = trimEnv(e.PROMPTPILE_LLM_API_KEY_ENV);
-  if (kn !== undefined) {
-    out.apiKeyEnvName = kn;
-  }
-  const b = trimEnv(e.AI_API_BASE_URL);
-  if (b !== undefined) {
-    out.apiBaseUrl = b;
-  }
-  const o = trimEnv(e.OUTPUT_FILE);
-  if (o !== undefined) {
-    out.output = o;
-  }
-  const op = trimEnv(e.PROMPTPILE_OUTPUT_PILE_FILE) ?? trimEnv(e.PROMPTPILE_OUTPUT_PIPE);
-  if (op !== undefined) {
-    out.outputPileFile = op;
-  }
-  out.outputPileFd = parseOutputPileFd(trimEnv(e.PROMPTPILE_OUTPUT_PILE_FD));
-  out.outputPileFormat = parseOutputPileFormat(
-    trimEnv(e.PROMPTPILE_OUTPUT_PILE_FORMAT) ?? trimEnv(e.PROMPTPILE_OUTPUT_PIPE_FORMAT)
-  );
-  const q = envBool(e.QUIET);
-  if (q !== undefined) {
-    out.quiet = q;
-  }
-  const cont = envBool(e.PROMPTPILE_CONTINUE);
-  if (cont !== undefined) {
-    out.continueMode = cont;
-  }
-  const inp = envBool(e.PROMPTPILE_INPUT);
-  if (inp !== undefined) {
-    out.inputMode = inp;
-  }
-  const tf = trimEnv(e.TOOLS_FILE) ?? trimEnv(e.PROMPTPILE_TOOLS_FILE);
-  if (tf !== undefined) {
-    out.toolsFileEnv = tf;
-  }
-  const ah = trimEnv(e.AFTER_HOOK_PATH);
-  if (ah !== undefined) {
-    out.afterHookEnv = ah;
-  }
-  const tc = trimEnv(e.TOOL_CHOICE);
-  if (tc !== undefined) {
-    out.toolChoice = tc;
-  }
-  const ins = trimEnv(e.PROMPTPILE_INSERT_FILES);
-  if (ins !== undefined) {
-    out.insertFiles = ins;
-  }
-  const app = trimEnv(e.PROMPTPILE_APPEND_FILES);
-  if (app !== undefined) {
-    out.appendFiles = app;
-  }
-  const dis = envBool(e.PROMPTPILE_DISABLE_TOOL);
-  if (dis !== undefined) {
-    out.disableTool = dis;
-  }
-  const temp =
-    trimEnv(e.PROMPTPILE_LLM_API_TEMPERATURE) ?? trimEnv(e.AI_TEMPERATURE);
-  if (temp !== undefined) {
-    out.temperature = parseTemperatureInput(temp);
-  }
-  const extraBody = trimEnv(e.PROMPTPILE_LLM_API_EXTRA_BODY);
-  if (extraBody !== undefined) {
-    out.extraBody = parseExtraBodyInput(extraBody);
-  }
-  return out;
-};
-
-const mapDotEnvRecord = (r: Record<string, string>): FlatLayer => {
-  const get = (k: string): string | undefined => trim(r[k]);
-  const out: FlatLayer = {};
-  const d = get('DEFAULT_DIRECTORY') ?? get('PROMPTPILE_DIR');
-  if (d !== undefined) {
-    out.directory = d;
-  }
-  const m = get('AI_MODEL');
-  if (m !== undefined) {
-    out.model = m;
-  }
-  const k = get('AI_API_KEY');
-  if (k !== undefined) {
-    out.apiKey = k;
-  }
-  const kn = get('PROMPTPILE_LLM_API_KEY_ENV');
-  if (kn !== undefined) {
-    out.apiKeyEnvName = kn;
-  }
-  const b = get('AI_API_BASE_URL');
-  if (b !== undefined) {
-    out.apiBaseUrl = b;
-  }
-  const o = get('OUTPUT_FILE');
-  if (o !== undefined) {
-    out.output = o;
-  }
-  const op = get('PROMPTPILE_OUTPUT_PILE_FILE') ?? get('PROMPTPILE_OUTPUT_PIPE');
-  if (op !== undefined) {
-    out.outputPileFile = op;
-  }
-  out.outputPileFd = parseOutputPileFd(get('PROMPTPILE_OUTPUT_PILE_FD'));
-  out.outputPileFormat = parseOutputPileFormat(
-    get('PROMPTPILE_OUTPUT_PILE_FORMAT') ?? get('PROMPTPILE_OUTPUT_PIPE_FORMAT')
-  );
-  const q = envBool(r.QUIET);
-  if (q !== undefined) {
-    out.quiet = q;
-  }
-  const cont = envBool(r.PROMPTPILE_CONTINUE);
-  if (cont !== undefined) {
-    out.continueMode = cont;
-  }
-  const inp = envBool(r.PROMPTPILE_INPUT);
-  if (inp !== undefined) {
-    out.inputMode = inp;
-  }
-  const tf = get('TOOLS_FILE') ?? get('PROMPTPILE_TOOLS_FILE');
-  if (tf !== undefined) {
-    out.toolsFileEnv = tf;
-  }
-  const ah = get('AFTER_HOOK_PATH');
-  if (ah !== undefined) {
-    out.afterHookEnv = ah;
-  }
-  const tc = get('TOOL_CHOICE');
-  if (tc !== undefined) {
-    out.toolChoice = tc;
-  }
-  const ins = get('PROMPTPILE_INSERT_FILES');
-  if (ins !== undefined) {
-    out.insertFiles = ins;
-  }
-  const app = get('PROMPTPILE_APPEND_FILES');
-  if (app !== undefined) {
-    out.appendFiles = app;
-  }
-  const dis = envBool(r.PROMPTPILE_DISABLE_TOOL);
-  if (dis !== undefined) {
-    out.disableTool = dis;
-  }
-  const temp = get('PROMPTPILE_LLM_API_TEMPERATURE') ?? get('AI_TEMPERATURE');
-  if (temp !== undefined) {
-    out.temperature = parseTemperatureInput(temp);
-  }
-  const extraBody = get('PROMPTPILE_LLM_API_EXTRA_BODY');
-  if (extraBody !== undefined) {
-    out.extraBody = parseExtraBodyInput(extraBody);
-  }
-  return out;
 };
 
 const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
@@ -273,7 +103,7 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   }
   const ah = getStr(p, 'after_hook');
   if (ah !== undefined) {
-    out.afterHookEnv = ah;
+    out.afterHookConfig = ah;
   }
   const tc = getStr(p, 'tool_choice');
   if (tc !== undefined) {
@@ -281,7 +111,7 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   }
   const tf = getStr(p, 'tools_file');
   if (tf !== undefined) {
-    out.toolsFileEnv = tf;
+    out.toolsFileConfig = tf;
   }
   const dt = getBool(p, 'disable_tool');
   if (dt !== undefined) {
@@ -303,6 +133,7 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   if (app !== undefined) {
     out.appendFiles = app;
   }
+  out.missingToolResults = parseMissingToolResultsPolicy(p.missing_tool_results);
 
   const profileName = getStr(p, 'llm_api');
   let model = getStr(p, 'llm_api_model');
@@ -351,115 +182,35 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
 const pickStr = (
   cli: string | undefined,
   toml: string | undefined,
-  scan: string | undefined,
-  cwd: string | undefined,
-  proc: string | undefined,
   fallback?: string
-): string => {
-  const v =
-    trim(cli) ?? trim(toml) ?? trim(scan) ?? trim(cwd) ?? trim(proc) ?? trim(fallback);
-  return v ?? '';
-};
+): string => trim(cli) ?? trim(toml) ?? trim(fallback) ?? '';
 
 const pickOptStr = (
   cli: string | undefined,
-  toml: string | undefined,
-  scan: string | undefined,
-  cwd: string | undefined,
-  proc: string | undefined
-): string | undefined => trim(cli) ?? trim(toml) ?? trim(scan) ?? trim(cwd) ?? trim(proc);
+  toml: string | undefined
+): string | undefined => trim(cli) ?? trim(toml);
 
 const pickNum = (
   cli: number | undefined,
   toml: number | undefined,
-  scan: number | undefined,
-  cwd: number | undefined,
-  proc: number | undefined,
   fallback: number
-): number => {
-  if (cli !== undefined) {
-    return cli;
-  }
-  if (toml !== undefined) {
-    return toml;
-  }
-  if (scan !== undefined) {
-    return scan;
-  }
-  if (cwd !== undefined) {
-    return cwd;
-  }
-  if (proc !== undefined) {
-    return proc;
-  }
-  return fallback;
-};
+): number => cli ?? toml ?? fallback;
 
 const pickOptNum = (
   cli: number | undefined,
-  toml: number | undefined,
-  scan: number | undefined,
-  cwd: number | undefined,
-  proc: number | undefined
-): number | undefined => {
-  if (cli !== undefined) return cli;
-  if (toml !== undefined) return toml;
-  if (scan !== undefined) return scan;
-  if (cwd !== undefined) return cwd;
-  if (proc !== undefined) return proc;
-  return undefined;
-};
+  toml: number | undefined
+): number | undefined => cli ?? toml;
 
 const pickRecord = (
   cli: ExtraBody | undefined,
-  toml: ExtraBody | undefined,
-  scan: ExtraBody | undefined,
-  cwd: ExtraBody | undefined,
-  proc: ExtraBody | undefined
-): ExtraBody | undefined => {
-  if (cli !== undefined) {
-    return cli;
-  }
-  if (toml !== undefined) {
-    return toml;
-  }
-  if (scan !== undefined) {
-    return scan;
-  }
-  if (cwd !== undefined) {
-    return cwd;
-  }
-  if (proc !== undefined) {
-    return proc;
-  }
-  return undefined;
-};
+  toml: ExtraBody | undefined
+): ExtraBody | undefined => cli ?? toml;
 
 const pickBool = (
   cli: boolean | undefined,
   toml: boolean | undefined,
-  scan: boolean | undefined,
-  cwd: boolean | undefined,
-  proc: boolean | undefined,
   def: boolean
-): boolean => {
-  if (cli !== undefined) {
-    return cli;
-  }
-  if (toml !== undefined) {
-    return toml;
-  }
-  if (scan !== undefined) {
-    return scan;
-  }
-  if (cwd !== undefined) {
-    return cwd;
-  }
-  if (proc !== undefined) {
-    return proc;
-  }
-  return def;
-};
+): boolean => cli ?? toml ?? def;
 
 const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   directory: trim(cli.directory),
@@ -476,24 +227,9 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   toolChoice: trim(cli.toolChoice),
   disableTool: cli.disableTool,
   temperature: cli.temperature,
-  extraBody: cli.extraBody
+  extraBody: cli.extraBody,
+  missingToolResults: cli.missingToolResults
 });
-
-export const computeDir0 = (
-  cwd: string,
-  cliDir: string | undefined,
-  tomlDir: string | undefined,
-  cwdDotDir: string | undefined,
-  procDir: string | undefined
-): string => {
-  const rel =
-    trim(cliDir) ??
-    trim(tomlDir) ??
-    trim(cwdDotDir) ??
-    trim(procDir) ??
-    './messages';
-  return path.resolve(cwd, rel);
-};
 
 export const resolveConfig = (cwd: string, argv: string[]): Config => {
   let cliPartial: Partial<Config>;
@@ -526,34 +262,12 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     }
   }
 
-  const cwdEnvPath = path.join(cwd, '.env');
-  const cwdEnvMap = loadEnvFile(cwdEnvPath);
-  const cwdLayer = mapDotEnvRecord(cwdEnvMap);
-
   const tomlLayer = buildTomlLayer(tomlParsed);
-
-  const procLayer = mapProcessEnv();
-
-  const dir0 = computeDir0(
-    cwd,
-    cliPartial.directory,
-    tomlLayer.directory,
-    cwdLayer.directory,
-    procLayer.directory
-  );
-
-  const scanEnvPath = path.join(dir0, '.env');
-  const scanEnvMap = loadEnvFile(scanEnvPath);
-  const scanLayer = mapDotEnvRecord(scanEnvMap);
-
   const cliLayer = mapCliToFlat(cliPartial);
 
   const directory = pickStr(
     cliLayer.directory,
     tomlLayer.directory,
-    scanLayer.directory,
-    cwdLayer.directory,
-    procLayer.directory,
     './messages'
   );
   const resolvedDirAbs = path.isAbsolute(directory) ? directory : path.resolve(cwd, directory);
@@ -561,33 +275,21 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
   const model = pickStr(
     cliLayer.model,
     tomlLayer.model,
-    scanLayer.model,
-    cwdLayer.model,
-    procLayer.model,
     'gpt-3.5-turbo'
   );
   const apiBaseUrl = pickStr(
     cliLayer.apiBaseUrl,
     tomlLayer.apiBaseUrl,
-    scanLayer.apiBaseUrl,
-    cwdLayer.apiBaseUrl,
-    procLayer.apiBaseUrl,
     'https://api.openai.com/v1'
   );
 
   const apiKeyDirect = pickOptStr(
     cliLayer.apiKey,
     tomlLayer.apiKey,
-    scanLayer.apiKey,
-    cwdLayer.apiKey,
-    procLayer.apiKey
   );
   const apiKeyEnvName = pickOptStr(
     undefined,
     tomlLayer.apiKeyEnvName,
-    scanLayer.apiKeyEnvName,
-    cwdLayer.apiKeyEnvName,
-    procLayer.apiKeyEnvName
   );
   let apiKey = apiKeyDirect ?? '';
   if (apiKey === '' && apiKeyEnvName !== undefined) {
@@ -597,127 +299,87 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
   const output = pickOptStr(
     cliLayer.output,
     tomlLayer.output,
-    scanLayer.output,
-    cwdLayer.output,
-    procLayer.output
   );
 
   const outputPileFile = pickOptStr(
     cliLayer.outputPileFile,
     tomlLayer.outputPileFile,
-    scanLayer.outputPileFile,
-    cwdLayer.outputPileFile,
-    procLayer.outputPileFile
   );
 
   const outputPileFd = pickOptNum(
     cliLayer.outputPileFd,
     tomlLayer.outputPileFd,
-    scanLayer.outputPileFd,
-    cwdLayer.outputPileFd,
-    procLayer.outputPileFd
   );
 
   const outputPileFormat = pickOptStr(
     cliLayer.outputPileFormat,
     tomlLayer.outputPileFormat,
-    scanLayer.outputPileFormat,
-    cwdLayer.outputPileFormat,
-    procLayer.outputPileFormat
   ) as OutputPileFormat | undefined;
 
   const quiet = pickBool(
     cliLayer.quiet,
     tomlLayer.quiet,
-    scanLayer.quiet,
-    cwdLayer.quiet,
-    procLayer.quiet,
     false
   );
 
   const continueMode = pickBool(
     cliLayer.continueMode,
     tomlLayer.continueMode,
-    scanLayer.continueMode,
-    cwdLayer.continueMode,
-    procLayer.continueMode,
     false
   );
 
   const inputMode = pickBool(
     cliLayer.inputMode,
     tomlLayer.inputMode,
-    scanLayer.inputMode,
-    cwdLayer.inputMode,
-    procLayer.inputMode,
     false
   );
 
   const disableTool = pickBool(
     cliLayer.disableTool,
     tomlLayer.disableTool,
-    scanLayer.disableTool,
-    cwdLayer.disableTool,
-    procLayer.disableTool,
     false
   );
 
-  const toolsFileEnv = pickOptStr(
+  const toolsFileConfig = pickOptStr(
     undefined,
-    tomlLayer.toolsFileEnv,
-    scanLayer.toolsFileEnv,
-    cwdLayer.toolsFileEnv,
-    procLayer.toolsFileEnv
+    tomlLayer.toolsFileConfig,
   );
 
-  const afterHookEnv = pickOptStr(
+  const afterHookConfig = pickOptStr(
     undefined,
-    tomlLayer.afterHookEnv,
-    scanLayer.afterHookEnv,
-    cwdLayer.afterHookEnv,
-    procLayer.afterHookEnv
+    tomlLayer.afterHookConfig,
   );
+
+  const allowDefaultAfterHook = cliPartial.allowDefaultAfterHook === true;
 
   const toolChoice = pickOptStr(
     cliLayer.toolChoice,
     tomlLayer.toolChoice,
-    scanLayer.toolChoice,
-    cwdLayer.toolChoice,
-    procLayer.toolChoice
   );
 
   const insertFilesMerged = pickOptStr(
     cliPartial.insertFilesCli,
     tomlLayer.insertFiles,
-    scanLayer.insertFiles,
-    cwdLayer.insertFiles,
-    procLayer.insertFiles
   );
 
   const appendFilesMerged = pickOptStr(
     cliPartial.appendFilesCli,
     tomlLayer.appendFiles,
-    scanLayer.appendFiles,
-    cwdLayer.appendFiles,
-    procLayer.appendFiles
   );
 
   const temperature = pickNum(
     cliLayer.temperature,
     tomlLayer.temperature,
-    scanLayer.temperature,
-    cwdLayer.temperature,
-    procLayer.temperature,
     DEFAULT_TEMPERATURE
   );
 
   const extraBody = pickRecord(
     cliLayer.extraBody,
     tomlLayer.extraBody,
-    scanLayer.extraBody,
-    cwdLayer.extraBody,
-    procLayer.extraBody
   );
+
+  const missingToolResults =
+    cliLayer.missingToolResults ?? tomlLayer.missingToolResults ?? 'warn';
 
   return {
     directory: resolvedDirAbs,
@@ -734,12 +396,14 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     outputPileFormat,
     quiet,
     toolsFileCli: cliPartial.toolsFileCli,
-    toolsFileEnv,
+    toolsFileConfig,
     insertFilesCli: insertFilesMerged,
     appendFilesCli: appendFilesMerged,
     afterHookCli: cliPartial.afterHookCli,
-    afterHookEnv,
+    afterHookConfig,
+    allowDefaultAfterHook,
     toolChoice,
+    missingToolResults,
     disableTool
   };
 };

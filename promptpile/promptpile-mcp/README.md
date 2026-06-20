@@ -4,7 +4,7 @@
 
 **完整技术设计（CLI、`mcp.toml`、HTTP API、工作流）见 [DESIGN.md](./DESIGN.md)。**
 
-**当前状态**：**`launch`** 在本机 **`127.0.0.1`** 提供 **Koa** HTTP 网关；**`export-tools`** 已实现（`GET /v1/tools/export` → 扁平 `.tools.toml`）；**`exec-calls`** 已实现：**目录模式**在 **`--dir`** 下递归 **`*.calls.jsonl`** 并写 **`stem.result.jsonl`**；**单文件模式**用 **`--input`** 指定一个 **`.calls.jsonl`**，**`--output`** 可省略（默认同目录 **`stem.result.jsonl`**）。**`--input` 与 `--dir` 互斥**；未指定 `--dir` 时目录模式仍默认扫描当前工作目录。**默认**跳过已有配对 result；**`--overwrite-results`** 覆盖。详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)。当 **`mcp.toml` 含 `[servers.*]`** 时，**`launch`** 使用 **`createMcpGatewayBackend`**（stdio **`initialize` / `tools/list` / `tools/call`**）；**无 `[servers]`** 时仍为 **stub** 后端（与 [test-fixtures/minimal.toml](./test-fixtures/minimal.toml) 兼容）。另有 **`npm run mcp:smoke`** 做独立 stdio 冒烟（见 [开发与构建](#开发与构建)）。需要 **Node.js 18+**（`fetch` / `AbortSignal.timeout`）。
+**当前状态**：**`launch`** 在本机 **`127.0.0.1`** 提供 **Koa** HTTP 网关；**`export-tools`** 已实现（`GET /v1/tools/export` → 扁平 `.tools.toml`）；**`exec-calls`** 已实现：**目录模式**仅扫描 **`--dir`** 第一层的 **`*.calls.jsonl`** 并写 **`stem.result.jsonl`**；**单文件模式**用 **`--input`** 指定一个 **`.calls.jsonl`**，**`--output`** 可省略（默认同目录 **`stem.result.jsonl`**）。**`--input` 与 `--dir` 互斥**；未指定 `--dir` 时目录模式仍默认扫描当前工作目录。**默认**跳过已有配对 result；**`--overwrite-results`** 覆盖。result 文件通过同目录临时文件 + `fsync` + `rename` 原子提交，失败时不会留下半截正式文件；每行额外保存工具级 `execution` 元数据。详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)。当 **`mcp.toml` 含 `[servers.*]`** 时，**`launch`** 使用 **`createMcpGatewayBackend`**（stdio **`initialize` / `tools/list` / `tools/call`**）；**无 `[servers]`** 时仍为 **stub** 后端（与 [test-fixtures/minimal.toml](./test-fixtures/minimal.toml) 兼容）。另有 **`npm run mcp:smoke`** 做独立 stdio 冒烟（见 [开发与构建](#开发与构建)）。网关按 `[execution]` 并发执行 calls，支持单调用超时、客户端断开取消、`continue | fail_fast` 失败策略，以及仅对显式安全工具启用的瞬时故障重试。需要 **Node.js 18+**（内置 `fetch` / `AbortController`）。
 
 ---
 
@@ -26,13 +26,14 @@
 
 ## CLI 概要
 
-**目标形态**为三条子命令（详见 [DESIGN.md §3](./DESIGN.md#3-cli-规格)）：
+**当前提供**四条子命令（详见 [DESIGN.md §3](./DESIGN.md#3-cli-规格)）：
 
 | 命令 | 作用 |
 |------|------|
 | **`launch`** | 加载 `mcp.toml`，启动 MCP 子进程与会话，监听 **本机 HTTP** 网关。 |
 | **`export-tools`** | 连接网关 `--base-url`，拉取工具列表并写入 **`.tools.toml`**（默认当前目录）；可选 **`--token`** 用于 Bearer 鉴权。 |
-| **`exec-calls`** | 连接网关：**目录模式** `--dir`（未指定时为 cwd）递归 **`*.calls.jsonl`**；**单文件模式** **`--input`**（与 **`--dir`** 互斥），**`--output`** 可选；写 **`stem.result.jsonl`**；默认跳过已有 result；**`--overwrite-results`** 覆盖；可选 **`--token`**。 |
+| **`exec-calls`** | 连接网关：**目录模式** `--dir`（未指定时为 cwd）仅扫描第一层 **`*.calls.jsonl`**；**单文件模式** **`--input`**（与 **`--dir`** 互斥），**`--output`** 可选；原子写 **`stem.result.jsonl`**；默认跳过已有 result；**`--overwrite-results`** 覆盖；可选 **`--token`**；**`--timeout-ms`** 控制每个 calls 文件的 HTTP 总超时。 |
+| **`check`** | 检查一个 `--input <file.calls.jsonl>` 及其配对 result，输出 `pending | partial | complete | invalid`；不执行工具，也不修改文件。 |
 
 `launch` 的 **`port`** / **`token`** 可由命令行或 `mcp.toml`（如 `[gateway]`）提供：**命令行优先**；**`port` 合并后必填**；**`token` 可选**，仅在有值时启用网关 Bearer 鉴权。**`export-tools`** / **`exec-calls`** 在网关已启用鉴权时通过 **`--token`** 传入同一密钥，请求头 **`Authorization: Bearer <token>`**。
 
@@ -51,7 +52,7 @@
 
 实现 MCP 工具列表前，需对齐 promptpile 里已有的两条路径：
 
-1. **静态工具加载** — [`packages/promptpile/src/tools-loader.ts`](../../packages/promptpile/src/tools-loader.ts) 的 `loadTools()`：从显式 **`.toml`**（可含 `extends`）或 `TOOLS_FILE` / `--tools-file` 解析出 OpenAI 形的 `tools[]`；**仅**包含用户/导出定义的工具，无内置 Glob/Grep。
+1. **静态工具加载** — [`packages/promptpile/src/tools-loader.ts`](../../packages/promptpile/src/tools-loader.ts) 的 `loadTools()`：从显式 **`.toml`**（可含 `extends`）或 `--tools-file` 解析出 OpenAI 形的 `tools[]`；**仅**包含用户/导出定义的工具，无内置 Glob/Grep。
 
 MCP 集成：通过 **`export-tools`** 写入 `.tools.toml`，使用稳定前缀（如 `mcp__<serverId>__<toolName>`），避免与静态工具重名。详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)。
 
@@ -89,6 +90,7 @@ promptpile 单次运行仍是一次补全；**执行**模型返回的 `tool_call
 | 方式 | 说明 |
 |------|------|
 | **`exec-calls` + 网关** | 目录扫描或 **`--input`** 单文件；经 **`POST /v1/calls/exec`**，写 **`stem.result.jsonl`**（详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)）。 |
+| **`check`** | 只读检查 calls/result 是否未执行、部分完成、完整或无效；用户确认后再手动覆盖重试。 |
 | **手工 / 脚本结果文件** | 与现有约定一致：将工具结果写入 `[idx]assistant.result.jsonl`。示例：`example/promptpile-tool-test/scripts/execute-tool-call.ts`。 |
 | **after-hook** | promptpile 完成后执行钩子；环境变量见 [`after-hook.ts`](../../packages/promptpile/src/after-hook.ts)；钩子内可调用 `exec-calls`。 |
 | **内置多轮 `--mcp-exec`**（远期） | 在 promptpile 进程内循环执行工具直到无 `tool_calls`。实现与安全成本高，**不与首版网关同步**。 |
@@ -117,7 +119,31 @@ promptpile 单次运行仍是一次补全；**执行**模型返回的 `tool_call
 | `init_timeout_ms` / `list_timeout_ms` | 握手与列表超时（可继承 `[defaults]`） |
 | `transport` | 可选；当前仅 **`stdio`**（缺省） |
 
-**`[behavior].failure_policy`** 须为 **`strict`** 或 **`best-effort`**。**`[servers.<id>]`** 表键须匹配 **`[A-Za-z0-9_-]+`** 且 **不得含 `__`**（与网关 **`mcp__<id>__<tool>`** 反解析一致，详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)）。包内运行 **`npm test`** 可跑配置解析与 **`tool-name`** 路由单测。
+执行策略示例：
+
+```toml
+[execution]
+concurrency = 4
+call_timeout_ms = 60000
+failure_policy = "continue"      # continue | fail_fast
+retry_max_attempts = 1          # 1 表示不重试
+retry_base_delay_ms = 250
+retry_safe_tools = ["mcp__fs__read_file"]
+```
+
+`fail_fast` 在首个失败结果后停止调度新调用；已经开始的调用会正常收尾。CLI 收到 `SIGINT` / `SIGTERM`、HTTP 客户端断开或 `--timeout-ms` 到期时会取消在途请求，且不会提交该 calls 文件的 result。 result JSONL 每行的 `execution` 对象记录 `ok`、`attempts`、`duration_ms`，失败时还记录 `error`；promptpile 回放会忽略这些扩展字段。
+
+已有 result 不完整或无效时，`exec-calls` 只打印 warning 并跳过，不自动恢复。检查和手动重试示例：
+
+```bash
+promptpile-mcp check --input path/to/turn.calls.jsonl
+promptpile-mcp exec-calls --base-url http://127.0.0.1:8765 \
+  --input path/to/turn.calls.jsonl --overwrite-results
+```
+
+`check` 退出码：`complete = 0`，`pending/partial = 1`，`invalid = 2`。
+
+**`[behavior].failure_policy`** 须为 **`strict`** 或 **`best-effort`**，只控制 MCP server 启动失败。**`[execution]`** 控制 calls 执行：`concurrency`、`call_timeout_ms`、`failure_policy = "continue" | "fail_fast"`、`retry_max_attempts`、`retry_base_delay_ms`、`retry_safe_tools`。重试默认关闭（`retry_max_attempts = 1`），且只有 `retry_safe_tools` 中按导出名称精确匹配的工具才会对超时或瞬时传输故障重试；MCP 返回的业务错误不会重试。**`[servers.<id>]`** 表键须匹配 **`[A-Za-z0-9_-]+`** 且 **不得含 `__`**（与网关 **`mcp__<id>__<tool>`** 反解析一致，详见 [DESIGN.md §7](./DESIGN.md#7-工具命名与去重)）。包内运行 **`npm test`** 可跑配置解析、工具路由、并发执行、取消/超时、安全重试和原子写入单测。
 
 ---
 
@@ -249,7 +275,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "C:\\temp\\mcp-allowed"
 
 然后 **`npm run build`**，终端 A：**`promptpile-mcp launch --config <路径>`**（可加 **`--port`** 覆盖）；终端 B：**`promptpile-mcp export-tools --base-url http://127.0.0.1:8765`** 应得到非空 **`.tools.toml`**。失败策略、超时、**`flat_names`** 见 [DESIGN.md §4](./DESIGN.md#4-mcptoml-配置)。
 
-运行 **`export-tools`** / **`exec-calls`** 需要 **Node.js 18+**（内置 `fetch` / `AbortSignal.timeout`）。
+运行 **`export-tools`** / **`exec-calls`** 需要 **Node.js 18+**（内置 `fetch` / `AbortController`）。
 
 本地 CLI：
 

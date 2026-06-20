@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import readline from 'readline';
 import fs from 'fs';
+import { atomicWriteFileSync } from './atomic-file';
 import path from 'path';
 import { resolveConfig } from './resolve-config';
 import {
   appendAssistantTurn,
   appendUserMessage,
-  buildMessages,
+  buildMessagesWithDiagnostics,
   scanDirectory
 } from './file-handler';
 import { callAIStream } from './ai-client';
@@ -21,6 +22,7 @@ import {
 import { isPromptpileDiagnostic } from './diagnostic-log';
 import { createOutputPileWriter } from './output-pile';
 import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types';
+import { applyMissingToolResultsPolicy } from './tool-result-policy';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -68,7 +70,7 @@ const writeCallsFile = (resolvedMainPath: string, toolCalls: ToolCall[] | undefi
   }
   const callsPath = callsPathForMainOutput(resolvedMainPath);
   const body = toolCalls.map(tc => JSON.stringify(tc)).join('\n') + '\n';
-  fs.writeFileSync(callsPath, body, 'utf8');
+  atomicWriteFileSync(callsPath, body);
 };
 
 const extraPathForMainOutput = (resolvedMainPath: string): string => {
@@ -81,10 +83,9 @@ const writeExtraFile = (resolvedMainPath: string, reasoningContent: string | und
     return;
   }
   const payload: AssistantExtraPayload = { reasoning_content: reasoningContent };
-  fs.writeFileSync(
+  atomicWriteFileSync(
     extraPathForMainOutput(resolvedMainPath),
-    `${JSON.stringify(payload, null, 2)}\n`,
-    'utf8'
+    `${JSON.stringify(payload, null, 2)}\n`
   );
 };
 
@@ -141,7 +142,7 @@ async function main(): Promise<void> {
           directory: config.directory,
           cwd,
           toolsFileCli: config.toolsFileCli,
-          toolsFileEnv: config.toolsFileEnv
+          toolsFileConfig: config.toolsFileConfig
         });
       } catch (e) {
         console.error('Error loading tools:', e instanceof Error ? e.message : e);
@@ -150,7 +151,7 @@ async function main(): Promise<void> {
 
       if (tools === undefined) {
         console.error(
-          'Error: tools require an explicit .toml path (--tools-file), TOOLS_FILE / PROMPTPILE_TOOLS_FILE / tools_file in config, or use --disable-tool to skip tools.'
+          'Error: tools require an explicit .toml path (--tools-file), tools_file in config, or use --disable-tool to skip tools.'
         );
         process.exit(1);
       }
@@ -166,7 +167,9 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    let messages = buildMessages(files);
+    const built = buildMessagesWithDiagnostics(files);
+    applyMissingToolResultsPolicy(built.diagnostics, config.missingToolResults);
+    let messages = built.messages;
 
     try {
       const inserts = loadSidecarMessages(cwd, config.insertFilesCli);
@@ -226,7 +229,7 @@ async function main(): Promise<void> {
     }
 
     if (resolvedOutput) {
-      fs.writeFileSync(resolvedOutput, response, 'utf8');
+      atomicWriteFileSync(resolvedOutput, response);
       writeCallsFile(resolvedOutput, toolCalls);
       writeExtraFile(resolvedOutput, reasoningContent);
     }
@@ -253,13 +256,16 @@ async function main(): Promise<void> {
       cwd,
       scanAbs,
       afterHookCli: config.afterHookCli,
-      afterHookEnv: config.afterHookEnv
+      afterHookConfig: config.afterHookConfig,
+      allowDefaultAfterHook: config.allowDefaultAfterHook
     });
     if (hookResolution.status === 'skip' && isPromptpileDiagnostic()) {
       console.error('[promptpile] after-hook: skipped (no script resolved)');
     }
-    if (hookResolution.status === 'warn_missing_explicit') {
-      console.error(`Warning: after-hook script not found: ${hookResolution.attempted}`);
+    if (hookResolution.status === 'warn_invalid_explicit') {
+      console.error(
+        `Warning: after-hook script is not executable as a regular file: ${hookResolution.attempted} (${hookResolution.reason})`
+      );
     } else if (hookResolution.status === 'run') {
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,

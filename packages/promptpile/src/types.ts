@@ -40,6 +40,21 @@ export interface ToolResultLine {
   name?: string;
 }
 
+export type MissingToolResultsPolicy = 'warn' | 'error' | 'ignore';
+
+export interface MessageDiagnostic {
+  kind: 'missing_tool_result';
+  idx: number;
+  toolCallId: string;
+  resultPath: string;
+  reason: 'result_file_missing' | 'tool_call_id_missing';
+}
+
+export interface BuildMessagesResult {
+  messages: ChatMessage[];
+  diagnostics: MessageDiagnostic[];
+}
+
 /** Single element of the API `tools` array (from tools `.toml` `[[tools]]` rows). */
 export type ToolDefinition = Record<string, unknown>;
 
@@ -83,21 +98,25 @@ export interface Config {
   quiet: boolean;
   /** CLI `--tools-file`: relative to cwd when relative. */
   toolsFileCli?: string;
-  /** Env `TOOLS_FILE`: relative to scan directory root when relative. */
-  toolsFileEnv?: string;
+  /** TOML `tools_file`: relative to scan directory root when relative. */
+  toolsFileConfig?: string;
   /** Merged `insert_files` / `--insert-files`: pipe-separated paths, relative to cwd. */
   insertFilesCli?: string;
   /** Merged `append_files` / `--append-files`: pipe-separated paths, relative to cwd. */
   appendFilesCli?: string;
   /** CLI `--after-hook-path`: relative to cwd when relative. */
   afterHookCli?: string;
-  /** Env `AFTER_HOOK_PATH`: relative to scan directory when relative. */
-  afterHookEnv?: string;
+  /** TOML `after_hook`: relative to scan directory when relative. */
+  afterHookConfig?: string;
+  /** CLI-only opt-in for discovering default .after-hook files in the scan directory. */
+  allowDefaultAfterHook: boolean;
   /**
-   * Raw `none` | `auto` | `required` | `function:<name>` from CLI `--tool-choice` or env `TOOL_CHOICE`.
+   * Raw `none` | `auto` | `required` | `function:<name>` from CLI `--tool-choice` or TOML `tool_choice`.
    * Parsed to {@link ChatApiToolChoice} when building the API body.
    */
   toolChoice?: string;
+  /** Handling for calls without matching tool results. */
+  missingToolResults: MissingToolResultsPolicy;
   /** CLI `--disable-tool`: skip loading tools from any source. */
   disableTool?: boolean;
 }

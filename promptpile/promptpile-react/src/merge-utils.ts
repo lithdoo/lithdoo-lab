@@ -1,4 +1,3 @@
-import { parseBoolEnv } from 'promptpile/dist/config';
 import { coerceExtraBodyValue, type ExtraBody } from 'promptpile/dist/llm-extra-body';
 import { coerceTemperatureValue } from 'promptpile/dist/llm-sampling';
 
@@ -27,7 +26,9 @@ export const getBool = (r: Record<string, unknown>, key: string): boolean | unde
     return v;
   }
   if (typeof v === 'string') {
-    return parseBoolEnv(v) ? true : v.trim() === '' ? undefined : false;
+    const normalized = v.trim().toLowerCase();
+    if (normalized === '') return undefined;
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
   }
   return undefined;
 };
@@ -64,13 +65,6 @@ export const getInt = (r: Record<string, unknown>, key: string): number | undefi
     }
   }
   return undefined;
-};
-
-export const envBool = (val: string | undefined): boolean | undefined => {
-  if (val === undefined || val.trim() === '') {
-    return undefined;
-  }
-  return parseBoolEnv(val);
 };
 
 export const pickStr = (

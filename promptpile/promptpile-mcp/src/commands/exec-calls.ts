@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { normalizeGatewayBaseUrl } from '../export/url';
 import {
+  checkCallsStatus,
+  type CallsStatusReport,
+} from '../exec-calls/check-status';
+import {
   resultAbsPathForCallFile,
   stemFromCallsBasename,
 } from '../exec-calls/calls-paths';
@@ -17,6 +21,21 @@ import {
   writeResultJsonlToPath,
 } from '../exec-calls/write-result-jsonl';
 
+function warnSkippedResult(
+  callsPath: string,
+  report: CallsStatusReport
+): void {
+  if (report.status === 'partial') {
+    console.warn(
+      `promptpile-mcp: warning: result 不完整，缺少 ${report.missing.join(', ')}；已跳过 ${callsPath}。使用 check 查看状态，确认后通过 --overwrite-results 重新执行。`
+    );
+  } else if (report.status === 'invalid') {
+    console.warn(
+      `promptpile-mcp: warning: result 状态无效（${report.error ?? 'unknown'}）；已跳过 ${callsPath}。使用 check 查看状态，确认后通过 --overwrite-results 重新执行。`
+    );
+  }
+}
+
 export type ExecCallsCliOptions = {
   baseUrl: string;
   /** 目录模式：扫描根目录；未设置时用 `process.cwd()`；与 `input` 互斥 */
@@ -29,6 +48,8 @@ export type ExecCallsCliOptions = {
   token?: string;
   /** 为 true 时覆盖已存在的 result；默认仅处理尚无 result 的项 */
   overwriteResults?: boolean;
+  requestTimeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 async function runExecCallsSingleFile(
@@ -71,9 +92,14 @@ async function runExecCallsSingleFile(
   }
 
   if (!overwrite && fs.existsSync(resultOutPath)) {
-    console.error(
-      `promptpile-mcp: 已存在 result，跳过（使用 --overwrite-results 可覆盖）: ${resultOutPath}`
-    );
+    const report = checkCallsStatus(inputPath, resultOutPath);
+    if (report.status === 'partial' || report.status === 'invalid') {
+      warnSkippedResult(inputPath, report);
+    } else {
+      console.error(
+        `promptpile-mcp: 已存在 result，跳过（使用 --overwrite-results 可覆盖）: ${resultOutPath}`
+      );
+    }
     return 0;
   }
 
@@ -90,7 +116,10 @@ async function runExecCallsSingleFile(
     return 1;
   }
 
-  const httpRes = await postExecCalls(baseUrlNorm, token, calls);
+  const httpRes = await postExecCalls(baseUrlNorm, token, calls, {
+    signal: opts.signal,
+    timeoutMs: opts.requestTimeoutMs,
+  });
   if (!httpRes.ok) {
     console.error(
       `promptpile-mcp: exec-calls HTTP ${httpRes.status}: ${truncateBody(httpRes.bodyText)}`
@@ -137,6 +166,14 @@ async function runExecCallsDirectory(
     return 1;
   }
 
+  if (!overwrite) {
+    for (const ref of allRefs) {
+      if (!fs.existsSync(ref.resultAbsPath)) continue;
+      const report = checkCallsStatus(ref.absPath, ref.resultAbsPath);
+      warnSkippedResult(ref.absPath, report);
+    }
+  }
+
   const toProcess = overwrite
     ? allRefs
     : allRefs.filter((r) => !fs.existsSync(r.resultAbsPath));
@@ -150,6 +187,7 @@ async function runExecCallsDirectory(
 
   let wroteAny = false;
   for (const { absPath, resultAbsPath } of toProcess) {
+    if (opts.signal?.aborted) return 130;
     let calls;
     try {
       calls = parseCallJsonlFile(absPath);
@@ -163,7 +201,10 @@ async function runExecCallsDirectory(
       continue;
     }
 
-    const httpRes = await postExecCalls(baseUrlNorm, token, calls);
+    const httpRes = await postExecCalls(baseUrlNorm, token, calls, {
+      signal: opts.signal,
+      timeoutMs: opts.requestTimeoutMs,
+    });
     if (!httpRes.ok) {
       console.error(
         `promptpile-mcp: exec-calls HTTP ${httpRes.status}: ${truncateBody(httpRes.bodyText)}`
@@ -197,41 +238,51 @@ async function runExecCallsDirectory(
 }
 
 /**
- * **目录模式**：扫描 `--dir` 下任意 `*.calls.jsonl` → POST → 同目录 `stem.result.jsonl`。
+ * **目录模式**：仅扫描 `--dir` 第一层的 `*.calls.jsonl` → POST → 同目录 `stem.result.jsonl`。
  * **单文件模式**：`--input` 指定单个 `.calls.jsonl`，`--output` 可选（默认同目录配对）。
  * `--input` 与 `--dir` 互斥。默认跳过已存在配对 result；`--overwrite-results` 覆盖。
  */
 export async function runExecCalls(
   opts: ExecCallsCliOptions
 ): Promise<number> {
-  try {
-    const hasInput =
-      opts.input !== undefined && String(opts.input).trim() !== '';
-    const hasExplicitDir = opts.dir !== undefined;
+  const controller = new AbortController();
+  const abort = (): void => controller.abort(new Error('cancelled'));
+  const onExternalAbort = (): void => abort();
+  if (opts.signal?.aborted) abort();
+  else opts.signal?.addEventListener('abort', onExternalAbort, { once: true });
+  process.once('SIGINT', abort);
+  process.once('SIGTERM', abort);
+  const effectiveOpts = { ...opts, signal: controller.signal };
 
+  try {
+    const hasInput = opts.input !== undefined && String(opts.input).trim() !== '';
+    const hasExplicitDir = opts.dir !== undefined;
     if (opts.output !== undefined && opts.output.trim() !== '' && !hasInput) {
       console.error('promptpile-mcp: 使用 --output 时必须同时指定 --input');
       return 1;
     }
-
     if (hasInput && hasExplicitDir) {
       console.error('promptpile-mcp: 不能同时使用 --input 与 --dir');
       return 1;
     }
-
     const overwrite = opts.overwriteResults === true;
     const baseUrlNorm = normalizeGatewayBaseUrl(opts.baseUrl);
-    const token =
-      opts.token !== undefined && opts.token !== '' ? opts.token : undefined;
-
-    if (hasInput) {
-      return runExecCallsSingleFile(opts, baseUrlNorm, token, overwrite);
-    }
-
-    return runExecCallsDirectory(opts, baseUrlNorm, token, overwrite);
+    const token = opts.token !== undefined && opts.token !== '' ? opts.token : undefined;
+    const code = hasInput
+      ? await runExecCallsSingleFile(effectiveOpts, baseUrlNorm, token, overwrite)
+      : await runExecCallsDirectory(effectiveOpts, baseUrlNorm, token, overwrite);
+    return controller.signal.aborted ? 130 : code;
   } catch (e) {
+    if (controller.signal.aborted) {
+      console.error('promptpile-mcp: exec-calls 已取消');
+      return 130;
+    }
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`promptpile-mcp: exec-calls 失败: ${msg}`);
     return 1;
+  } finally {
+    opts.signal?.removeEventListener('abort', onExternalAbort);
+    process.removeListener('SIGINT', abort);
+    process.removeListener('SIGTERM', abort);
   }
 }

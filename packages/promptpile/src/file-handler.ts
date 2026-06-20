@@ -2,7 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import { readFileSync as readUtf8FileFromDisk } from '@agent-tool-lite/file';
 import { normalizeToolCalls } from './ai-client';
-import type { AssistantExtraPayload, ChatMessage, FileInfo, ToolCall, ToolResultLine } from './types';
+import type {
+  AssistantExtraPayload,
+  BuildMessagesResult,
+  ChatMessage,
+  FileInfo,
+  MessageDiagnostic,
+  ToolCall,
+  ToolResultLine
+} from './types';
+import { atomicWriteFileSync } from './atomic-file';
 import { formatMissingToolResultContent } from './types';
 
 const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
@@ -57,67 +66,59 @@ const compareScannedFiles = (a: FileInfo, b: FileInfo): number => {
   return a.path.localeCompare(b.path);
 };
 
+/** Scan only direct files in the message directory; nested directories are intentionally ignored. */
 export const scanDirectory = (directory: string): FileInfo[] => {
   const files: FileInfo[] = [];
+  const entries = fs.readdirSync(directory, { withFileTypes: true });
 
-  const traverse = (currentPath: string) => {
-    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
 
-    for (const entry of entries) {
-      const fullPath = path.join(currentPath, entry.name);
-
-      if (entry.isDirectory()) {
-        traverse(fullPath);
-      } else if (entry.isFile()) {
-        let m = entry.name.match(ASSISTANT_CALL_PATTERN);
-        if (m) {
-          files.push({
-            path: fullPath,
-            idx: parseInt(m[1], 10),
-            role: 'assistant',
-            extension: 'jsonl',
-            fileKind: 'assistant_call'
-          });
-          continue;
-        }
-        m = entry.name.match(ASSISTANT_RESULT_PATTERN);
-        if (m) {
-          files.push({
-            path: fullPath,
-            idx: parseInt(m[1], 10),
-            role: 'assistant',
-            extension: 'jsonl',
-            fileKind: 'assistant_result'
-          });
-          continue;
-        }
-        m = entry.name.match(ASSISTANT_EXTRA_PATTERN);
-        if (m) {
-          files.push({
-            path: fullPath,
-            idx: parseInt(m[1], 10),
-            role: 'assistant',
-            extension: 'json',
-            fileKind: 'assistant_extra'
-          });
-          continue;
-        }
-        m = entry.name.match(FILE_PATTERN);
-        if (m) {
-          const ext = m[3].toLowerCase() as 'md' | 'json';
-          files.push({
-            path: fullPath,
-            idx: parseInt(m[1], 10),
-            role: m[2],
-            extension: ext,
-            fileKind: 'message'
-          });
-        }
-      }
+    const fullPath = path.join(directory, entry.name);
+    let m = entry.name.match(ASSISTANT_CALL_PATTERN);
+    if (m) {
+      files.push({
+        path: fullPath,
+        idx: parseInt(m[1], 10),
+        role: 'assistant',
+        extension: 'jsonl',
+        fileKind: 'assistant_call'
+      });
+      continue;
     }
-  };
-
-  traverse(directory);
+    m = entry.name.match(ASSISTANT_RESULT_PATTERN);
+    if (m) {
+      files.push({
+        path: fullPath,
+        idx: parseInt(m[1], 10),
+        role: 'assistant',
+        extension: 'jsonl',
+        fileKind: 'assistant_result'
+      });
+      continue;
+    }
+    m = entry.name.match(ASSISTANT_EXTRA_PATTERN);
+    if (m) {
+      files.push({
+        path: fullPath,
+        idx: parseInt(m[1], 10),
+        role: 'assistant',
+        extension: 'json',
+        fileKind: 'assistant_extra'
+      });
+      continue;
+    }
+    m = entry.name.match(FILE_PATTERN);
+    if (m) {
+      files.push({
+        path: fullPath,
+        idx: parseInt(m[1], 10),
+        role: m[2],
+        extension: m[3].toLowerCase() as 'md' | 'json',
+        fileKind: 'message'
+      });
+    }
+  }
   return files.sort(compareScannedFiles);
 };
 
@@ -227,7 +228,10 @@ export const parseAssistantExtraFile = (raw: string): string => {
   return rec.reasoning_content;
 };
 
-const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
+const buildMessagesForIdx = (
+  group: FileInfo[],
+  diagnostics: MessageDiagnostic[]
+): ChatMessage[] => {
   const idx = group[0]?.idx ?? 0;
   const messages: ChatMessage[] = [];
   const callFile = group.find(f => f.fileKind === 'assistant_call');
@@ -304,6 +308,15 @@ const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
     if (idsFromCall) {
       for (const tc of idsFromCall) {
         const r = byId.get(tc.id);
+        if (!r) {
+          diagnostics.push({
+            kind: 'missing_tool_result',
+            idx,
+            toolCallId: tc.id,
+            resultPath: resultFile.path,
+            reason: 'tool_call_id_missing'
+          });
+        }
         const msg: ChatMessage = {
           role: 'tool',
           tool_call_id: tc.id,
@@ -329,6 +342,13 @@ const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
     }
   } else if (idsFromCall) {
     for (const tc of idsFromCall) {
+      diagnostics.push({
+        kind: 'missing_tool_result',
+        idx,
+        toolCallId: tc.id,
+        resultPath: path.join(path.dirname(callFile!.path), '[' + idx + ']assistant.result.jsonl'),
+        reason: 'result_file_missing'
+      });
       messages.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -340,7 +360,8 @@ const buildMessagesForIdx = (group: FileInfo[]): ChatMessage[] => {
   return messages;
 };
 
-export const buildMessages = (files: FileInfo[]): ChatMessage[] => {
+export const buildMessagesWithDiagnostics = (files: FileInfo[]): BuildMessagesResult => {
+  const diagnostics: MessageDiagnostic[] = [];
   const byIdx = new Map<number, FileInfo[]>();
   for (const f of files) {
     if (!byIdx.has(f.idx)) {
@@ -355,11 +376,14 @@ export const buildMessages = (files: FileInfo[]): ChatMessage[] => {
   for (const idx of indices) {
     const group = byIdx.get(idx)!;
     group.sort(compareScannedFiles);
-    out.push(...buildMessagesForIdx(group));
+    out.push(...buildMessagesForIdx(group, diagnostics));
   }
 
-  return out;
+  return { messages: out, diagnostics };
 };
+
+export const buildMessages = (files: FileInfo[]): ChatMessage[] =>
+  buildMessagesWithDiagnostics(files).messages;
 
 /** @deprecated Use buildMessages(scanDirectory(...)) */
 export const readFiles = (files: FileInfo[]): ChatMessage[] => {
@@ -418,28 +442,26 @@ export const appendAssistantTurn = (
   const hasContent = content.length > 0;
   const hasCalls = !!(toolCalls && toolCalls.length > 0);
   const hasReasoning = !!(reasoningContent && reasoningContent.trim());
-  if (!hasContent && !hasCalls && !hasReasoning) {
-    return { idx: nextAssistantIdx(directory, files) };
-  }
-
   const idx = nextAssistantIdx(directory, files);
+  if (!hasContent && !hasCalls && !hasReasoning) return { idx };
+
   let mdPath: string | undefined;
   let callsPath: string | undefined;
   let extraPath: string | undefined;
 
   if (hasContent) {
     mdPath = path.join(directory, `[${idx}]assistant.md`);
-    fs.writeFileSync(mdPath, content, 'utf8');
+    atomicWriteFileSync(mdPath, content);
   }
   if (hasCalls) {
     callsPath = path.join(directory, `[${idx}]assistant.calls.jsonl`);
     const body = toolCalls!.map(tc => JSON.stringify(tc)).join('\n') + '\n';
-    fs.writeFileSync(callsPath, body, 'utf8');
+    atomicWriteFileSync(callsPath, body);
   }
   if (hasReasoning) {
     extraPath = path.join(directory, `[${idx}]assistant.extra.json`);
     const payload: AssistantExtraPayload = { reasoning_content: reasoningContent!.trim() };
-    fs.writeFileSync(extraPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    atomicWriteFileSync(extraPath, `${JSON.stringify(payload, null, 2)}\n`);
   }
 
   return { idx, mdPath, callsPath, extraPath };
@@ -455,6 +477,6 @@ const appendMessage = (directory: string, files: FileInfo[], role: string, conte
     filePath = path.join(directory, `[${nextIdx}]${role}.md`);
   }
 
-  fs.writeFileSync(filePath, content, 'utf8');
+  atomicWriteFileSync(filePath, content);
   return filePath;
 };

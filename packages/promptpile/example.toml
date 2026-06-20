@@ -31,6 +31,7 @@
     input = true
     insert_files = './inject.system.md'
     # append_files = './tail.user.md'
+    missing_tool_results = 'warn' # warn | error | ignore
 
     # 从定义的 llm_api 里选
     llm_api = 'deepseek' 

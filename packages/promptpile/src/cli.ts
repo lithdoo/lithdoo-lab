@@ -3,6 +3,7 @@ import { parseExtraBodyInput } from './llm-extra-body';
 import { parseTemperatureInput } from './llm-sampling';
 import { parseOutputPileFd, parseOutputPileFormat } from './output-pile';
 import { Config } from './types';
+import { parseMissingToolResultsPolicy } from './tool-result-policy';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
 export interface CliParseResult {
@@ -56,12 +57,20 @@ const buildProgram = (): Command => {
       'Run this script file after success (relative paths resolve from cwd)'
     )
     .option(
+      '--allow-default-after-hook',
+      'Allow discovery of a default .after-hook script in the scan directory'
+    )
+    .option(
       '--tool-choice <value>',
       'OpenAI tool_choice when tools are sent: none | auto | required | function:<name> (default: auto if unset)'
     )
     .option(
       '--disable-tool',
-      'Do not load or send tools: skip --tools-file / TOOLS_FILE'
+      'Do not load or send tools: skip --tools-file'
+    )
+    .option(
+      '--missing-tool-results <policy>',
+      'Handle missing tool results: warn | error | ignore (default: warn)'
     )
   return program;
 };
@@ -86,12 +95,14 @@ export const parseCli = (argv: string[]): CliParseResult => {
     input?: boolean;
     toolsFile?: string;
     afterHookPath?: string;
+    allowDefaultAfterHook?: boolean;
     toolChoice?: string;
     insertFiles?: string;
     appendFiles?: string;
     temperature?: string;
     extraBody?: string;
     disableTool?: boolean;
+    missingToolResults?: string;
   };
 
   const trimOpt = (value: string | undefined): string | undefined => {
@@ -144,6 +155,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
   if (typeof rawExtraBody === 'string' && rawExtraBody.trim() !== '') {
     extraBody = parseExtraBodyInput(rawExtraBody.trim());
   }
+  const missingToolResults = parseMissingToolResultsPolicy(options.missingToolResults);
 
   return {
     configPath,
@@ -163,9 +175,12 @@ export const parseCli = (argv: string[]): CliParseResult => {
       insertFilesCli,
       appendFilesCli,
       afterHookCli,
+      allowDefaultAfterHook:
+        options.allowDefaultAfterHook === true ? true : undefined,
       toolChoice: toolChoiceCli,
       temperature,
       extraBody,
+      missingToolResults,
       disableTool: options.disableTool === true ? true : undefined
     }
   };

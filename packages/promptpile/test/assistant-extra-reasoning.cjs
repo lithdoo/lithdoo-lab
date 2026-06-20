@@ -97,6 +97,60 @@ try {
     fs.rmSync(tmp4, { recursive: true, force: true });
   }
 
+  const tmp5 = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-non-recursive-'));
+  try {
+    fs.writeFileSync(path.join(tmp5, '[0]system.md'), 'root system', 'utf8');
+    fs.writeFileSync(path.join(tmp5, '[1]assistant.md'), 'root reply', 'utf8');
+    fs.writeFileSync(
+      path.join(tmp5, '[1]assistant.calls.jsonl'),
+      JSON.stringify({ id: 'call_root', type: 'function', function: { name: 'root_tool', arguments: '{}' } }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(tmp5, '[1]assistant.extra.json'),
+      JSON.stringify({ reasoning_content: 'root reasoning' }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(tmp5, '[1]assistant.result.jsonl'),
+      JSON.stringify({ tool_call_id: 'call_root', name: 'root_tool', content: 'root result' }) + '\n',
+      'utf8'
+    );
+
+    const nested = path.join(tmp5, 'nested');
+    fs.mkdirSync(nested);
+    fs.writeFileSync(path.join(nested, '[9]user.md'), 'nested user', 'utf8');
+    fs.writeFileSync(
+      path.join(nested, '[9]assistant.calls.jsonl'),
+      JSON.stringify({ id: 'call_nested', type: 'function', function: { name: 'nested_tool', arguments: '{}' } }) + '\n',
+      'utf8'
+    );
+
+    const rootFiles = scanDirectory(tmp5);
+    assert.deepStrictEqual(
+      rootFiles.map(file => path.basename(file.path)),
+      [
+        '[0]system.md',
+        '[1]assistant.md',
+        '[1]assistant.calls.jsonl',
+        '[1]assistant.extra.json',
+        '[1]assistant.result.jsonl'
+      ]
+    );
+    assert.ok(rootFiles.every(file => path.dirname(file.path) === tmp5));
+
+    const rootMessages = buildMessages(rootFiles);
+    assert.strictEqual(rootMessages.length, 3);
+    assert.strictEqual(rootMessages[1].content, 'root reply');
+    assert.strictEqual(rootMessages[1].reasoning_content, 'root reasoning');
+    assert.strictEqual(rootMessages[1].tool_calls[0].id, 'call_root');
+    assert.strictEqual(rootMessages[2].tool_call_id, 'call_root');
+    assert.strictEqual(rootMessages[2].content, 'root result');
+    assert.strictEqual(nextAssistantIdx(tmp5, rootFiles), 2);
+  } finally {
+    fs.rmSync(tmp5, { recursive: true, force: true });
+  }
+
   console.log('assistant-extra-reasoning tests ok');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

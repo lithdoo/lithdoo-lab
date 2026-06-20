@@ -19,13 +19,19 @@ export type ExecCallResult = {
   ok: boolean;
   content?: unknown;
   error?: string;
+  attempts?: number;
+  durationMs?: number;
+};
+
+export type ExecCallsOptions = {
+  signal?: AbortSignal;
 };
 
 /** MCP 会话实现须满足的网关后端契约（可由 stub 或真实 MCP 替换）。 */
 export type GatewayBackend = {
   health(): Promise<{ ok: boolean; servers: Record<string, 'up' | 'down'> }>;
   exportTools(): Promise<{ tools: OpenAiToolEntry[]; warnings?: string[] }>;
-  execCalls(calls: ExecCallItem[]): Promise<{ results: ExecCallResult[] }>;
+  execCalls(calls: ExecCallItem[], options?: ExecCallsOptions): Promise<{ results: ExecCallResult[] }>;
   /** Optional teardown (close MCP stdio sessions, etc.). */
   dispose?(): Promise<void>;
 };

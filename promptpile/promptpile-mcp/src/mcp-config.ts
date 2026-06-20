@@ -3,8 +3,12 @@ import { loadConfigDocument, parseGatewayTable } from './gateway-config';
 
 const DEFAULT_INIT_MS = 30_000;
 const DEFAULT_LIST_MS = 30_000;
+const DEFAULT_EXEC_CONCURRENCY = 4;
+const DEFAULT_CALL_TIMEOUT_MS = 60_000;
+const DEFAULT_RETRY_BASE_DELAY_MS = 250;
 
 export type FailurePolicy = 'strict' | 'best-effort';
+export type ExecFailurePolicy = 'continue' | 'fail_fast';
 
 export type McpServerTransport = 'stdio';
 
@@ -29,6 +33,16 @@ export type McpBehavior = {
   flat_names: boolean;
 };
 
+export type McpExecution = {
+  concurrency: number;
+  call_timeout_ms: number;
+  failure_policy: ExecFailurePolicy;
+  retry_max_attempts: number;
+  retry_base_delay_ms: number;
+  /** Exact gateway tool names that may be retried after transient failures. */
+  retry_safe_tools: string[];
+};
+
 /** Full config file shape: gateway + MCP servers and behavior. */
 export type McpFileConfig = {
   /** 顶层 `version`，缺省为 1；非 1 时告警。 */
@@ -36,6 +50,7 @@ export type McpFileConfig = {
   gateway: GatewayFileConfig;
   defaults: McpDefaults;
   behavior: McpBehavior;
+  execution: McpExecution;
   servers: Record<string, McpServerEntry>;
 };
 
@@ -95,6 +110,63 @@ function parseBehavior(raw: unknown): McpBehavior {
   return {
     failure_policy,
     flat_names: b.flat_names === true,
+  };
+}
+
+function positiveInteger(
+  value: unknown,
+  fallback: number,
+  context: string,
+  minimum = 1
+): number {
+  if (value === undefined) return fallback;
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < minimum
+  ) {
+    throw new Error(`promptpile-mcp: ${context} 须为 >= ${minimum} 的整数`);
+  }
+  return value;
+}
+
+function parseExecution(raw: unknown): McpExecution {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      concurrency: DEFAULT_EXEC_CONCURRENCY,
+      call_timeout_ms: DEFAULT_CALL_TIMEOUT_MS,
+      failure_policy: 'continue',
+      retry_max_attempts: 1,
+      retry_base_delay_ms: DEFAULT_RETRY_BASE_DELAY_MS,
+      retry_safe_tools: [],
+    };
+  }
+  const e = raw as Record<string, unknown>;
+  const failure = e.failure_policy ?? 'continue';
+  if (failure !== 'continue' && failure !== 'fail_fast') {
+    throw new Error('promptpile-mcp: execution.failure_policy 须为 "continue" 或 "fail_fast"');
+  }
+  const safe = e.retry_safe_tools;
+  if (
+    safe !== undefined &&
+    (!Array.isArray(safe) ||
+      !safe.every((x) => typeof x === 'string' && x.trim() !== ''))
+  ) {
+    throw new Error('promptpile-mcp: execution.retry_safe_tools 须为非空字符串数组');
+  }
+  return {
+    concurrency: positiveInteger(e.concurrency, DEFAULT_EXEC_CONCURRENCY, 'execution.concurrency'),
+    call_timeout_ms: positiveInteger(e.call_timeout_ms, DEFAULT_CALL_TIMEOUT_MS, 'execution.call_timeout_ms'),
+    failure_policy: failure,
+    retry_max_attempts: positiveInteger(e.retry_max_attempts, 1, 'execution.retry_max_attempts'),
+    retry_base_delay_ms: positiveInteger(
+      e.retry_base_delay_ms,
+      DEFAULT_RETRY_BASE_DELAY_MS,
+      'execution.retry_base_delay_ms',
+      0
+    ),
+    retry_safe_tools: (safe as string[] | undefined)?.map((x) => x.trim()) ?? [],
   };
 }
 
@@ -210,6 +282,7 @@ export function readMcpConfig(configPath: string): McpFileConfig {
     gateway: parseGatewayTable(doc.gateway),
     defaults: parseDefaults(doc.defaults),
     behavior: parseBehavior(doc.behavior),
+    execution: parseExecution(doc.execution),
     servers: parseServers(doc.servers),
   };
 }

@@ -6,29 +6,26 @@ const os = require('os');
 const assert = require('assert');
 
 const root = path.join(__dirname, '..');
-const { computeDir0, resolveConfig } = require(path.join(root, 'dist', 'resolve-config.js'));
-
-const base = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dir0-'));
-try {
-  assert.strictEqual(
-    computeDir0(base, 'a', undefined, undefined, undefined),
-    path.resolve(base, 'a')
-  );
-  assert.strictEqual(
-    computeDir0(base, undefined, 'from-toml', 'from-cwd', undefined),
-    path.resolve(base, 'from-toml')
-  );
-} finally {
-  fs.rmSync(base, { recursive: true, force: true });
-}
+const { resolveConfig } = require(path.join(root, 'dist', 'resolve-config.js'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-cfg-'));
 const prevCwd = process.cwd();
-const hadModel = Object.prototype.hasOwnProperty.call(process.env, 'AI_MODEL');
-const prevModel = process.env.AI_MODEL;
+const envKeys = [
+  'AI_MODEL',
+  'DEFAULT_DIRECTORY',
+  'PROMPTPILE_LLM_API_EXTRA_BODY',
+  'PROMPTPILE_OUTPUT_PILE_FILE',
+  'PROMPTPILE_OUTPUT_PIPE',
+  'PROMPTPILE_OUTPUT_PILE_FD',
+  'PROMPTPILE_OUTPUT_PILE_FORMAT',
+  'PROMPTPILE_OUTPUT_PIPE_FORMAT',
+  'PROMPTPILE_TEST_KEY'
+];
+const envBefore = new Map(envKeys.map(key => [key, process.env[key]]));
 try {
   process.chdir(tmp);
-  delete process.env.AI_MODEL;
+  process.env.AI_MODEL = 'm-proc';
+  process.env.DEFAULT_DIRECTORY = 'ignored-env-directory';
 
   const msgRel = 'messages';
   const msgAbs = path.join(tmp, msgRel);
@@ -40,18 +37,34 @@ try {
   const fakeScript = path.join(tmp, 'fake-index.js');
   fs.writeFileSync(fakeScript, '');
   const cfg = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
-  assert.strictEqual(cfg.model, 'm-scan', 'scan .env overrides cwd .env');
+  assert.strictEqual(cfg.model, 'gpt-3.5-turbo', 'ordinary process.env and .env model config are ignored');
+  assert.strictEqual(cfg.directory, msgAbs, 'default directory is used when CLI and TOML omit it');
 
   const tomlPath = path.join(tmp, 'app.toml');
   fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_model = "m-toml"\n');
   const cfg2 = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
-  assert.strictEqual(cfg2.model, 'm-toml', 'toml overrides scan for model');
+  assert.strictEqual(cfg2.model, 'm-toml', 'toml config sets model');
 
   const cfg3 = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key', '-m', 'm-cli']);
   assert.strictEqual(cfg3.model, 'm-cli', 'cli overrides toml');
 
+  process.env.PROMPTPILE_TEST_KEY = 'key-from-env-name';
+  fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_key_env = \'PROMPTPILE_TEST_KEY\'\n');
+  const cfgKeyEnv = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgKeyEnv.apiKey, 'key-from-env-name', 'TOML api_key_env reads process.env');
+
   const cfgDefaultTemp = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
   assert.strictEqual(cfgDefaultTemp.temperature, 0.8, 'default temperature when unset');
+  assert.strictEqual(cfgDefaultTemp.missingToolResults, 'warn', 'default missing tool results policy');
+
+  fs.writeFileSync(tomlPath, '[promptpile]\nmissing_tool_results = "ignore"\n');
+  const cfgTomlMissing = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.strictEqual(cfgTomlMissing.missingToolResults, 'ignore', 'toml missing tool results policy');
+  const cfgCliMissing = resolveConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml', '-k', 'key',
+    '--missing-tool-results', 'error'
+  ]);
+  assert.strictEqual(cfgCliMissing.missingToolResults, 'error', 'cli missing tool results policy overrides toml');
 
   fs.writeFileSync(
     tomlPath,
@@ -79,13 +92,13 @@ try {
   const cfgTomlExtra = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
   assert.deepStrictEqual(cfgTomlExtra.extraBody, { a: 1 }, 'toml llm_api_extra_body');
 
-  fs.writeFileSync(path.join(msgAbs, '.env'), 'PROMPTPILE_LLM_API_EXTRA_BODY={"b":2}\n');
+  process.env.PROMPTPILE_LLM_API_EXTRA_BODY = '{"b":2}';
   const cfgEnvExtra = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
-  assert.deepStrictEqual(cfgEnvExtra.extraBody, { a: 1 }, 'toml extra_body wins over scan env');
+  assert.deepStrictEqual(cfgEnvExtra.extraBody, { a: 1 }, 'toml extra_body is unaffected by process.env');
 
   fs.writeFileSync(tomlPath, '[promptpile]\n');
-  const cfgScanExtra = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
-  assert.deepStrictEqual(cfgScanExtra.extraBody, { b: 2 }, 'scan env extra_body when toml unset');
+  const cfgEnvExtraOnly = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.strictEqual(cfgEnvExtraOnly.extraBody, undefined, 'ordinary process.env extra_body is ignored');
 
   const cfgCliExtra = resolveConfig(tmp, [
     'node',
@@ -97,18 +110,18 @@ try {
     '--extra-body',
     '{"c":3}'
   ]);
-  assert.deepStrictEqual(cfgCliExtra.extraBody, { c: 3 }, 'cli --extra-body overrides env');
+  assert.deepStrictEqual(cfgCliExtra.extraBody, { c: 3 }, 'cli --extra-body sets extra body');
 
   fs.writeFileSync(
     tomlPath,
     '[promptpile]\noutput_pile_file = "toml-new.jsonl"\noutput_pipe = "toml-old.jsonl"\noutput_pile_fd = 3\noutput_pile_format = "json"\n'
   );
-  fs.writeFileSync(
-    path.join(msgAbs, '.env'),
-    'PROMPTPILE_OUTPUT_PILE_FILE=scan-new.txt\nPROMPTPILE_OUTPUT_PIPE=scan-old.txt\nPROMPTPILE_OUTPUT_PILE_FD=5\nPROMPTPILE_OUTPUT_PILE_FORMAT=text\n'
-  );
+  process.env.PROMPTPILE_OUTPUT_PILE_FILE = 'env-new.txt';
+  process.env.PROMPTPILE_OUTPUT_PIPE = 'env-old.txt';
+  process.env.PROMPTPILE_OUTPUT_PILE_FD = '5';
+  process.env.PROMPTPILE_OUTPUT_PILE_FORMAT = 'text';
   const cfgTomlPile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
-  assert.strictEqual(cfgTomlPile.outputPileFile, 'toml-new.jsonl', 'toml output_pile_file overrides scan env and old toml alias');
+  assert.strictEqual(cfgTomlPile.outputPileFile, 'toml-new.jsonl', 'toml output_pile_file overrides old toml alias');
   assert.strictEqual(cfgTomlPile.outputPileFd, 3, 'toml output_pile_fd');
   assert.strictEqual(cfgTomlPile.outputPileFormat, 'json', 'toml output_pile_format');
 
@@ -118,15 +131,18 @@ try {
   assert.strictEqual(cfgOldTomlPile.outputPileFormat, 'json', 'old toml output_pipe_format alias');
 
   fs.writeFileSync(tomlPath, '[promptpile]\n');
-  const cfgScanPile = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
-  assert.strictEqual(cfgScanPile.outputPileFile, 'scan-new.txt', 'scan env output pile file when toml unset');
-  assert.strictEqual(cfgScanPile.outputPileFd, 5, 'scan env output pile fd');
-  assert.strictEqual(cfgScanPile.outputPileFormat, 'text', 'scan env output pile format');
+  const cfgEnvPile = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.strictEqual(cfgEnvPile.outputPileFile, undefined, 'ordinary process.env output pile file is ignored');
+  assert.strictEqual(cfgEnvPile.outputPileFd, undefined, 'ordinary process.env output pile fd is ignored');
+  assert.strictEqual(cfgEnvPile.outputPileFormat, undefined, 'ordinary process.env output pile format is ignored');
 
-  fs.writeFileSync(path.join(msgAbs, '.env'), 'PROMPTPILE_OUTPUT_PIPE=scan-old-only.txt\nPROMPTPILE_OUTPUT_PIPE_FORMAT=json\n');
-  const cfgOldScanPile = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
-  assert.strictEqual(cfgOldScanPile.outputPileFile, 'scan-old-only.txt', 'old env output pipe alias');
-  assert.strictEqual(cfgOldScanPile.outputPileFormat, 'json', 'old env output pipe format alias');
+  delete process.env.PROMPTPILE_OUTPUT_PILE_FILE;
+  delete process.env.PROMPTPILE_OUTPUT_PILE_FORMAT;
+  process.env.PROMPTPILE_OUTPUT_PIPE = 'env-old-only.txt';
+  process.env.PROMPTPILE_OUTPUT_PIPE_FORMAT = 'json';
+  const cfgOldEnvPile = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
+  assert.strictEqual(cfgOldEnvPile.outputPileFile, undefined, 'old process.env output pipe alias is ignored');
+  assert.strictEqual(cfgOldEnvPile.outputPileFormat, undefined, 'old process.env output pipe format alias is ignored');
 
   const cfgCliPile = resolveConfig(tmp, [
     'node',
@@ -140,8 +156,8 @@ try {
     '--output-pile-format',
     'text'
   ]);
-  assert.strictEqual(cfgCliPile.outputPileFile, 'cli-stream.jsonl', 'cli output pile file overrides env');
-  assert.strictEqual(cfgCliPile.outputPileFd, 4, 'cli output pile fd overrides env');
+  assert.strictEqual(cfgCliPile.outputPileFile, 'cli-stream.jsonl', 'cli output pile file');
+  assert.strictEqual(cfgCliPile.outputPileFd, 4, 'cli output pile fd');
   assert.strictEqual(cfgCliPile.outputPileFormat, 'text', 'cli output pile format');
 
   const cfgCliAliasPile = resolveConfig(tmp, [
@@ -158,10 +174,9 @@ try {
   assert.strictEqual(cfgCliAliasPile.outputPileFormat, 'json', 'old cli output-pipe-format alias');
 } finally {
   process.chdir(prevCwd);
-  if (hadModel) {
-    process.env.AI_MODEL = prevModel;
-  } else {
-    delete process.env.AI_MODEL;
+  for (const [key, value] of envBefore) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
   }
   fs.rmSync(tmp, { recursive: true, force: true });
 }

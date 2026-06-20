@@ -1,6 +1,7 @@
 import type { McpFileConfig } from '../mcp-config';
 import { StdioMcpSession } from '../mcp/stdio-session';
 import { routeExecToolName, toGatewayToolName } from '../mcp/tool-name';
+import { executeCallsWithPolicy } from './execution';
 import type { ExecCallItem, ExecCallResult, GatewayBackend, OpenAiToolEntry } from './types';
 
 type McpListedTool = {
@@ -160,95 +161,44 @@ export async function createMcpGatewayBackend(config: McpFileConfig): Promise<Ga
       return { tools, warnings: warnings.length > 0 ? warnings : undefined };
     },
 
-    async execCalls(calls: ExecCallItem[]): Promise<{ results: ExecCallResult[] }> {
+    async execCalls(calls: ExecCallItem[], options): Promise<{ results: ExecCallResult[] }> {
       const flatNames = config.behavior.flat_names;
-      const results: ExecCallResult[] = [];
-
-      for (const call of calls) {
-        const name = call.function.name;
-        const routed = routeExecToolName(name, {
-          flatNames: flatNames,
-          flatIndex,
-          allowPrefixedUnderFlat: true,
-        });
-        if (!routed.ok) {
-          results.push({
-            toolCallId: call.id,
-            ok: false,
-            error: routed.error,
+      const results = await executeCallsWithPolicy(
+        calls,
+        config.execution,
+        async (call, execution) => {
+          const routed = routeExecToolName(call.function.name, {
+            flatNames,
+            flatIndex,
+            allowPrefixedUnderFlat: true,
           });
-          continue;
-        }
-        const { serverId, mcpToolName } = routed;
+          if (!routed.ok) return { ok: false, error: routed.error };
 
-        if (!serverIds.includes(serverId)) {
-          results.push({
-            toolCallId: call.id,
-            ok: false,
-            error: 'unknown_server',
-          });
-          continue;
-        }
+          const { serverId, mcpToolName } = routed;
+          if (!serverIds.includes(serverId)) return { ok: false, error: 'unknown_server' };
+          if (status[serverId] !== 'up') return { ok: false, error: 'server_down' };
+          const session = sessions.get(serverId);
+          if (!session) return { ok: false, error: 'internal_no_session' };
 
-        if (status[serverId] !== 'up') {
-          results.push({
-            toolCallId: call.id,
-            ok: false,
-            error: 'server_down',
-          });
-          continue;
-        }
-
-        const session = sessions.get(serverId);
-        if (!session) {
-          results.push({
-            toolCallId: call.id,
-            ok: false,
-            error: 'internal_no_session',
-          });
-          continue;
-        }
-
-        let argsObj: Record<string, unknown>;
-        try {
-          const parsed = JSON.parse(call.function.arguments) as unknown;
-          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            results.push({
-              toolCallId: call.id,
-              ok: false,
-              error: 'invalid_arguments_json',
-            });
-            continue;
+          let argsObj: Record<string, unknown>;
+          try {
+            const parsed = JSON.parse(call.function.arguments) as unknown;
+            if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+              return { ok: false, error: 'invalid_arguments_json' };
+            }
+            argsObj = parsed as Record<string, unknown>;
+          } catch {
+            return { ok: false, error: 'invalid_arguments_json' };
           }
-          argsObj = parsed as Record<string, unknown>;
-        } catch {
-          results.push({
-            toolCallId: call.id,
-            ok: false,
-            error: 'invalid_arguments_json',
-          });
-          continue;
-        }
 
-        try {
-          const raw = await session.callTool(mcpToolName, argsObj);
-          const mapped = mapCallToolResult(raw);
-          results.push({
-            toolCallId: call.id,
-            ok: mapped.ok,
-            content: mapped.content,
-            error: mapped.error,
+          const raw = await session.callTool(mcpToolName, argsObj, {
+            signal: execution.signal,
+            timeoutMs: config.execution.call_timeout_ms,
           });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          results.push({
-            toolCallId: call.id,
-            ok: false,
-            error: msg,
-          });
-        }
-      }
-
+          return mapCallToolResult(raw);
+        },
+        options?.signal
+      );
       return { results };
     },
   };
