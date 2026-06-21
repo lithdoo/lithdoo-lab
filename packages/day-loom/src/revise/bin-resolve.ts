@@ -26,7 +26,7 @@ export function getPromptpileMcpSpawnConfig(): SpawnConfig {
     const script = path.join(path.dirname(pkg), 'dist', 'src', 'index.js');
     if (fs.existsSync(script)) return nodeScript(script);
   } catch { /* fall through */ }
-  const repoScript = path.resolve(__dirname, '../../../../promptpile/promptpile-mcp/dist/src/index.js');
+  const repoScript = path.resolve(__dirname, '../../../../promptpile/packages/promptpile-mcp/dist/src/index.js');
   if (fs.existsSync(repoScript)) return nodeScript(repoScript);
   return { command: 'promptpile-mcp', argvPrefix: [], displayName: 'promptpile-mcp' };
 }

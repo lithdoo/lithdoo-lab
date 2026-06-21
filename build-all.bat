@@ -13,7 +13,7 @@ if not exist "%ROOT%packages\" (
 call :npm_build "packages\tomlith"
 if errorlevel 1 exit /b 1
 
-call :npm_build "packages\promptpile"
+call :npm_build "promptpile"
 if errorlevel 1 exit /b 1
 
 call :npm_build "web-components\file-view-component"

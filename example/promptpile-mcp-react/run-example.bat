@@ -67,7 +67,7 @@ set "TOKEN_ARG="
 if not "%PROMPTPILE_MCP_TOKEN%"=="" set "TOKEN_ARG=--token %PROMPTPILE_MCP_TOKEN%"
 
 echo Exporting messages\.tools.toml ...
-call npx --prefix "..\..\promptpile\promptpile-mcp" promptpile-mcp export-tools --base-url "%MCP_BASE_URL%" -o "messages\.tools.toml" %TOKEN_ARG%
+call npx --prefix "..\..\promptpile\packages\promptpile-mcp" promptpile-mcp export-tools --base-url "%MCP_BASE_URL%" -o "messages\.tools.toml" %TOKEN_ARG%
 if errorlevel 1 (
   echo export-tools failed.
   exit /b 1
@@ -79,11 +79,11 @@ echo LLM dumps enabled: PROMPTPILE_REACT_DEBUG=1 ^(files in %CD%\*.req.json / *.
 echo Starting promptpile-react ^(config: promptpile-react.toml^). User input: type message then Ctrl+Z Enter ^(Windows^) to submit each round. Ctrl+C to exit.
 echo.
 
-call npx --prefix "..\..\promptpile\promptpile-react" promptpile-react --config promptpile-react.toml
+call npx --prefix "..\..\promptpile\packages\promptpile-react" promptpile-react --config promptpile-react.toml
 set "ERR=!ERRORLEVEL!"
 
 echo.
 echo After-hook attempts exec-calls when Thought emits tool_calls ^(gateway must stay up^). Manual retry:
-echo   npx --prefix "..\..\promptpile\promptpile-mcp" promptpile-mcp exec-calls --base-url "%MCP_BASE_URL%" --dir "%CD%\messages" %TOKEN_ARG%
+echo   npx --prefix "..\..\promptpile\packages\promptpile-mcp" promptpile-mcp exec-calls --base-url "%MCP_BASE_URL%" --dir "%CD%\messages" %TOKEN_ARG%
 
 exit /b !ERR!

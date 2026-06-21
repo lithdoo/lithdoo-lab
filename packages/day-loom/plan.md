@@ -115,7 +115,7 @@ days/042/
 
 ## AI 阶段拆分（建议 4 次调用）
 
-全部塞进一次 prompt 容易失控；可对应 [`promptpile`](../../packages/promptpile/) 的消息目录多轮调用：
+全部塞进一次 prompt 容易失控；可对应 [`promptpile`](../../promptpile/packages/promptpile/) 的消息目录多轮调用：
 
 | 阶段 | 任务 | 输入 | 输出 |
 |------|------|------|------|
@@ -124,7 +124,7 @@ days/042/
 | **Play**（可选多次） | 分支外即兴 | 当前 beat + 用户输入 | 局部对话/旁白 |
 | **Settle** | 日终结算 | 当日 play 日志 + 世界档案 | 日记 + patch |
 
-[`promptpile-react`](../../promptpile/promptpile-react/) 的 thought → observe → check → final 模式，适合套在 **Generate** 和 **Settle**：
+[`promptpile-react`](../../promptpile/packages/promptpile-react/) 的 thought → observe → check → final 模式，适合套在 **Generate** 和 **Settle**：
 
 - Generate 后 check：事件是否可玩、分支是否闭合
 - Settle 后 check：patch 是否符合 schema、有无自相矛盾

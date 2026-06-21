@@ -26,7 +26,7 @@
     "@agent-tool-lite/web": "file:../agent-lite-tools/web",
     "@iarna/toml": "^2.2.5",
     "hostra": "file:../packages/hostra",
-    "promptpile": "file:../packages/promptpile",
+    "promptpile": "file:../promptpile/packages/promptpile",
     "tomlith": "file:../packages/tomlith",
     "ws": "^8.19.0"
   },

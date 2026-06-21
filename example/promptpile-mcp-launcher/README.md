@@ -5,7 +5,7 @@
 ## 前置条件
 
 - **Node.js 18+**；使用 **Playwright MCP** 时官方建议 **Node.js 20+**（见 [Playwright MCP 安装说明](https://playwright.dev/mcp/installation)）。
-- 本仓库 **`promptpile/promptpile-mcp`** 已执行 **`npm install`**（会执行 `prepare` 生成 **`dist/`**；若直接运行提示缺少 `dist/src/index.js`，请先在该目录安装依赖）。
+- 本仓库 **`promptpile/packages/promptpile-mcp`** 已执行 **`npm install`**（会执行 `prepare` 生成 **`dist/`**；若直接运行提示缺少 `dist/src/index.js`，请先在该目录安装依赖）。
 - 本仓库 **`example`** 目录已执行 **`npm install`**（安装 `@modelcontextprotocol/server-filesystem`、`@playwright/mcp` 等依赖；本脚本在缺少 `example\node_modules` 时会自动在 `example\` 下安装）。
 - **Fetch MCP**：官方实现通过 **Python / uv** 分发（[`mcp-server-fetch`](https://pypi.org/project/mcp-server-fetch/)），**npm 上不存在** `@modelcontextprotocol/server-fetch`。本示例在 `mcp.toml` 中使用 **`uvx mcp-server-fetch`**。Windows 可在本目录运行 **`install-uv.bat`**（调用 [Astral 官方安装脚本](https://docs.astral.sh/uv/getting-started/installation/)，需联网），安装后一般会包含 **`uv`** / **`uvx`**；也可自行按 [uv 文档](https://docs.astral.sh/uv/) 安装。
   - 若本机尚无 Python，可运行 **`install-python.bat`**：当 **`python`** 不在 PATH 时，通过 **winget** 安装 **Python 3.14**（包 ID `Python.Python.3.14`；需已安装 **winget**，可能出现 UAC）。本示例 fetch 仍以 **`uvx`** 为准；Python 可用于 pip 场景或将 **`mcp.toml`** 中 fetch 改为官方文档里的 **`python -m mcp_server_fetch`** 等形式。
@@ -24,11 +24,11 @@ run-example.bat
 
 网关默认监听 **`http://127.0.0.1:8765`**（见 `mcp.toml` 中 `[gateway].port`）。
 
-**终端 B**（在任意目录，确保能解析到本仓库的 `promptpile/promptpile-mcp`）：
+**终端 B**（在任意目录，确保能解析到本仓库的 `promptpile/packages/promptpile-mcp`）：
 
 ```bat
 cd /d path\to\hostra\example\promptpile-mcp-launcher
-npx --prefix "..\..\promptpile\promptpile-mcp" promptpile-mcp export-tools --base-url http://127.0.0.1:8765
+npx --prefix "..\..\promptpile\packages\promptpile-mcp" promptpile-mcp export-tools --base-url http://127.0.0.1:8765
 ```
 
 应生成当前目录下的 **`.tools.toml`**，工具名形如 **`mcp__fs__…`**、**`mcp__fetch__…`**、**`mcp__playwright__…`**（见 promptpile-mcp 文档中的命名规则）。

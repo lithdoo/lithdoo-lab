@@ -1054,7 +1054,7 @@ day-loom revise -d ./path/to/world
 交互模式需要：
 
 - `DEEPSEEK_API_KEY`
-- 可用的 `promptpile-mcp` CLI。可设置 `PROMPTPILE_MCP_BIN`，或先在仓库的 `promptpile/promptpile-mcp/` 中安装依赖并构建。
+- 可用的 `promptpile-mcp` CLI。可设置 `PROMPTPILE_MCP_BIN`，或先在仓库的 `promptpile/packages/promptpile-mcp/` 中安装依赖并构建。
 - 默认 MCP Server 使用 `npx -y @modelcontextprotocol/server-filesystem <world_root>`。也可设置 `DAY_LOOM_FILESYSTEM_MCP_BIN` 指向已安装包的 `dist/index.js`，避免每次通过 `npx` 解析。
 
 也可以连接已运行的网关：

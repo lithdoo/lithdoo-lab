@@ -149,6 +149,6 @@ rm -rf output/world-interactive
 |------|------|
 | `DEEPSEEK_API_KEY is not set` | 设置环境变量或创建 `.env`；Windows 使用 `setx` 后需新开 cmd。 |
 | `spawn promptpile ENOENT` | 在 `packages/day-loom` 执行 `npm install`，或重新运行脚本。 |
-| `spawn promptpile-mcp ENOENT` | 设置 `PROMPTPILE_MCP_BIN`，构建 `promptpile/promptpile-mcp`，或使用 `PROMPTPILE_MCP_BASE_URL`。 |
+| `spawn promptpile-mcp ENOENT` | 设置 `PROMPTPILE_MCP_BIN`，构建 `promptpile/packages/promptpile-mcp`，或使用 `PROMPTPILE_MCP_BASE_URL`。 |
 | filesystem MCP 首次安装失败 | 确认网络可访问 npm registry；脚本会在 `.runtime/` 中执行最小安装。 |
 | 需要检查 AI 临时 session | interactive 脚本默认启用 `--keep-session`，路径会打印到 stderr。 |

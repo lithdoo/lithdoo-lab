@@ -1,0 +1,3 @@
+[submodule "promptpile"]
+	path = promptpile
+	url = https://github.com/lithdoo/promptpile.git

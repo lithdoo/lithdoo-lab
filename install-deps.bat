@@ -14,7 +14,7 @@ if not exist "%ROOT%packages\" (
 call :npm_ci "packages\tomlith"
 if errorlevel 1 exit /b 1
 
-call :npm_ci "packages\promptpile"
+call :npm_ci "promptpile"
 if errorlevel 1 exit /b 1
 
 call :npm_ci "packages\hostra"

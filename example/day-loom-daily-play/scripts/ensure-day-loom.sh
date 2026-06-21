@@ -10,7 +10,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 EXAMPLE_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PROMPTPILE_DIST="$DAY_LOOM_DIR/node_modules/promptpile/dist/index.js"
 DAY_LOOM_DIST="$DAY_LOOM_DIR/dist/index.js"
-REPO_MCP_DIR="$DAY_LOOM_DIR/../../promptpile/promptpile-mcp"
+REPO_MCP_DIR="$DAY_LOOM_DIR/../../promptpile/packages/promptpile-mcp"
 REPO_MCP_DIST="$REPO_MCP_DIR/dist/src/index.js"
 FILESYSTEM_MCP_DIST="$EXAMPLE_ROOT/.runtime/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js"
 
