@@ -8,7 +8,7 @@
 - Run from this folder with `run-example.bat`
 - Ensure Bun is installed
 
-模型、API 地址、消息目录和工具文件由 [`promptpile.toml`](promptpile.toml) 显式配置；`.env` 仅供示例脚本和 agent-lite web 工具读取，不再作为 promptpile 自身的配置层。
+模型、API 地址、消息目录和工具文件由 [`promptpile.toml`](promptpile.toml) 显式配置；`.env` 中的 `AI_*` / `SEARXNG_*` 仅供 agent-lite web 工具读取，不再作为 promptpile 自身的配置层。
 
 ## 生成 tools.toml
 

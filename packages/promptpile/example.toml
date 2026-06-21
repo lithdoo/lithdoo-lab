@@ -20,7 +20,7 @@
 
 [promptpile]
     dir = './message'
-    output = true
+    output = './message/promptpile-example-output.md'
     quiet = false
     after_hook = './after_hook.sh'
     tool_choice = 'auto'

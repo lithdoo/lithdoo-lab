@@ -19,6 +19,8 @@
 
 ## 已有示例
 
+- `promptpile-chat-loop/`：使用显式 `promptpile.toml` 的基础多轮对话循环；启动脚本可将本地 `.env` 中的密钥注入进程环境。
+- `promptpile-tool-test/`：显式 TOML + `--after-hook-path` 的工具调用闭环示例；消息与 calls/result 都位于消息目录根层。
 - `promptpile-mcp-react/`：`run-example.bat` 串联网关、`messages/`、`export-tools` 与 **`promptpile-react --config promptpile-react.toml`**；根目录 `.react.*.md` 由 TOML 引用（扩展包位于 `promptpile/`）
 - `promptpile-mcp-launcher/`：`promptpile-mcp launch` + filesystem / fetch / Playwright MCP（stdio + 本机 HTTP 网关）最小示例（`promptpile-mcp` 位于 `promptpile/promptpile-mcp`）
 - `hostra-open-web/`：通过 `hostra` 的 JSON-RPC `openWindow` 打开本地网页

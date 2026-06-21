@@ -111,7 +111,7 @@ React CLI
 |------|------|
 | **argv** | `buildPhaseArgv('check', …, { directoryOverride: 空临时目录 })` + **`--insert-files`**（`check.system.md` + `observe-report.user.md`）+ 临时 **`--tools-file`**（`react_check_decision`）+ **`-o`**。依赖 `promptpile`：扫描目录为空时若提供 insert-files 仍可调用（见 `packages/promptpile`）。 |
 | **判定** | 读 `{basename}.calls.jsonl` 中 **`react_check_decision`** 的 `decision === true` → 继续；否则停止。解析失败 → **`throw PromptpileReactInvocationError`**（`phase: 'check'`）。 |
-| **LLM** | 独立配置 `check_llm_api_*` / `PROMPTPILE_REACT_CHECK_*`（未设时与 observe 相同回退链）。 |
+| **LLM** | 独立配置 `check_llm_api_*`；未设置时回退共享的 TOML LLM profile。 |
 
 ## ReAct 收尾（`reactFinalAnswerProcess` / `finalAnswer`）
 

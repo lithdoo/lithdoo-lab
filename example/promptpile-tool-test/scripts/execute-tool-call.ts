@@ -36,8 +36,8 @@ const exampleRoot = resolve(thisFileDir, '..')
 // File-tool roots: see roots.txt (shell tools ignore roots; cwd below applies).
 const rootsFilePath = resolve(exampleRoot, 'roots.txt')
 const ignoreFilePath = resolve(exampleRoot, 'ignore.txt')
-// Same file as promptpile run-example: AI_MODEL / AI_API_KEY / AI_API_BASE_URL,
-// plus optional SEARXNG_* keys (parseWebEnvLike).
+// Optional agent-lite web-tool config only; promptpile itself uses promptpile.toml.
+// Supports AI_MODEL / AI_API_KEY / AI_API_BASE_URL and optional SEARXNG_* keys.
 const envPath = resolve(exampleRoot, '.env')
 
 /** When `.env` has no `SEARXNG_DEFAULT_ENGINES`, prefer quality-oriented engines (order matters for SearXNG). */

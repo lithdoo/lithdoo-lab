@@ -17,7 +17,7 @@
 # 各参数含义（与 example.toml 字段对应）：
 # --config=example.toml — 单独指定 TOML 配置文件。
 # --directory=./message — dir，消息扫描目录。
-# --output=./message/promptpile-example-output.md — output 写文件路径（TOML 为 true 时请改为具体路径）。
+# --output=./message/promptpile-example-output.md — output 写文件路径。
 # （quiet=false 不传 --quiet；为 true 时追加 --quiet）
 # --after-hook-path=./after_hook.sh — after_hook，成功后脚本路径（CLI 相对 cwd）。
 # --allow-default-after-hook — 仅当未显式配置 hook 时，允许发现消息目录根的默认 .after-hook.*；默认关闭。
