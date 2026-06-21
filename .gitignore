@@ -87,9 +87,6 @@ out/
 # Electron binary (hostra package)
 packages/hostra/electron_bin/
 
-# promptpile runtime output
-promptpile/packages/promptpile/outputs/
-
 # example runtime data
 example/hostra-open-web/user-data/
 example/hostra-web-editor/user-data/
@@ -99,5 +96,4 @@ example/hostra-file-view/user-data/
 .npmrc
 /example/hostra-command-terminal/user-data
 user-data
-/example/promptpile-mcp-launcher/.playwright-mcp
 /packages/tomlith/lib
