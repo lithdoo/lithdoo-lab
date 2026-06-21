@@ -634,4 +634,4 @@ npm run build
 npm test
 ```
 
-There is no npm `workspaces` field at the hostra repository root; link this package from siblings with `"@agent-tool-lite/file": "file:../../agent-lite-tools/file"` (see `packages/promptpile`).
+There is no npm `workspaces` field at the hostra repository root; link this package from siblings with `"@agent-tool-lite/file": "file:../../agent-lite-tools/file"` (see the standalone `promptpile` repository when integrating across repositories).

@@ -42,7 +42,7 @@ echo Input ends with Ctrl+Z then Enter.
 :loop
 echo.
 echo ---- New Round ----
-call npx --prefix "..\..\packages\promptpile" promptpile --config promptpile.toml --input --continue
+call npx --prefix "..\..\promptpile\packages\promptpile" promptpile --config promptpile.toml --input --continue
 if errorlevel 1 (
   echo [ERROR] promptpile failed.
   exit /b 1

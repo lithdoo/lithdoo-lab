@@ -50,9 +50,9 @@ AI 探索和提案
 
 | 组件 | 位置 | 用途 |
 |------|------|------|
-| `promptpile` | `packages/promptpile/` | 调用模型，维护消息目录 |
-| `promptpile-mcp` | `promptpile/promptpile-mcp/` | 启动 MCP 网关、导出工具定义、执行 MCP 调用 |
-| `promptpile-react` | `promptpile/promptpile-react/` | 驱动 AI 多轮探索：Thought -> Observe -> Check -> Final |
+| `promptpile` | `promptpile/packages/promptpile/` | 调用模型，维护消息目录 |
+| `promptpile-mcp` | `promptpile/packages/promptpile-mcp/` | 启动 MCP 网关、导出工具定义、执行 MCP 调用 |
+| `promptpile-react` | `promptpile/packages/promptpile-react/` | 驱动 AI 多轮探索：Thought -> Observe -> Check -> Final |
 | 官方 filesystem MCP | `@modelcontextprotocol/server-filesystem` | 限定目录内的文件列表、路径搜索和文本读取 |
 | `@agent-tool-lite/search` | `agent-lite-tools/search/` | 后续全文 `Grep` 扩展的现成实现 |
 
@@ -177,7 +177,7 @@ args = [
 启动：
 
 ```bash
-npx --prefix promptpile/promptpile-mcp promptpile-mcp launch \
+npx --prefix promptpile/packages/promptpile-mcp promptpile-mcp launch \
   --config /path/to/mcp.toml
 ```
 

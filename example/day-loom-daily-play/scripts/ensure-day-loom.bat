@@ -9,7 +9,7 @@ if not defined DAY_LOOM_DIR (
 set "EXAMPLE_ROOT=%~dp0.."
 set "PROMPTPILE_DIST=%DAY_LOOM_DIR%\node_modules\promptpile\dist\index.js"
 set "DAY_LOOM_DIST=%DAY_LOOM_DIR%\dist\index.js"
-set "REPO_MCP_DIR=%DAY_LOOM_DIR%\..\..\promptpile\promptpile-mcp"
+set "REPO_MCP_DIR=%DAY_LOOM_DIR%\..\..\promptpile\packages\promptpile-mcp"
 set "REPO_MCP_DIST=%REPO_MCP_DIR%\dist\src\index.js"
 set "FILESYSTEM_MCP_DIST=%EXAMPLE_ROOT%\.runtime\node_modules\@modelcontextprotocol\server-filesystem\dist\index.js"
 

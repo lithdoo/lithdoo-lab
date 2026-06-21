@@ -88,7 +88,7 @@ out/
 packages/hostra/electron_bin/
 
 # promptpile runtime output
-packages/promptpile/outputs/
+promptpile/packages/promptpile/outputs/
 
 # example runtime data
 example/hostra-open-web/user-data/
