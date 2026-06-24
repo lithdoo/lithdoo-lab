@@ -58,7 +58,7 @@ const url = buildTerminalWebSocketUrl({
 
 ## 示例页面
 
-见仓库 [`example/hostra-command-terminal`](../../example/hostra-command-terminal)。需先 **`npm run build`** 本包与 **`command-ws-server`**，再用本地静态 HTTP 打开（避免 `file://` 限制 WebSocket）。
+见子模块示例 [`hostra/examples/hostra-command-terminal`](../../hostra/examples/hostra-command-terminal)。需先 **`npm run build`** 本包与 **`command-ws-server`**，再用本地静态 HTTP 打开（避免 `file://` 限制 WebSocket）。
 
 ## 测试
 

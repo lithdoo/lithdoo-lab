@@ -4,3 +4,6 @@
 [submodule "dayloom"]
 	path = dayloom
 	url = https://github.com/lithdoo/dayloom.git
+[submodule "hostra"]
+	path = hostra
+	url = https://github.com/lithdoo/hostra.git

@@ -5,16 +5,10 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "test": "node -e \"console.log('hostra-example: no automated tests yet')\"",
-    "list": "node -e \"console.log('Place examples under example/<package-name>/ and document in README.md')\"",
-    "day-loom:quick": "cd day-loom-init-revise && run-quick.bat",
-    "day-loom:verify-quick": "node day-loom-init-revise/scripts/verify-world.js day-loom-init-revise/output/world-quick --mode quick",
-    "day-loom:revise-smoke": "cd day-loom-init-revise && run-revise-smoke.bat",
-    "day-loom:daily-interactive": "cd day-loom-daily-play && run-interactive.bat",
-    "day-loom:play-interactive": "cd day-loom-daily-play && run-play-interactive.bat"
+    "test": "node -e \"console.log('lithdoo-lab examples: no automated tests yet')\"",
+    "list": "node -e \"console.log('Workspace-specific examples live under example/<package-name>/')\""
   },
   "keywords": [
-    "hostra",
     "examples"
   ],
   "dependencies": {
@@ -23,7 +17,6 @@
     "@agent-tool-lite/shell": "file:../agent-lite-tools/shell",
     "@agent-tool-lite/web": "file:../agent-lite-tools/web",
     "@iarna/toml": "^2.2.5",
-    "hostra": "file:../packages/hostra",
     "promptpile": "file:../promptpile/packages/promptpile",
     "tomlith": "file:../packages/tomlith",
     "ws": "^8.19.0"

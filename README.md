@@ -4,7 +4,7 @@
 
 当前主要内容：
 
-- [`packages/hostra`](packages/hostra/)：`hostra` Electron 本地 shell 与 JSON-RPC 入口。
+- [`hostra`](hostra/)：独立 hostra 仓库子模块。
 - [`promptpile`](promptpile/)：独立 promptpile 仓库子模块。
 - [`dayloom`](dayloom/)：独立 dayloom 仓库子模块。
 - [`web-components`](web-components/)：可复用 Web Components 与配套服务。
