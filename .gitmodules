@@ -1,6 +1,6 @@
 [submodule "promptpile"]
 	path = promptpile
 	url = https://github.com/lithdoo/promptpile.git
-[submodule "packages/day-loom"]
-	path = packages/day-loom
+[submodule "dayloom"]
+	path = dayloom
 	url = https://github.com/lithdoo/dayloom.git
