@@ -1,6 +1,6 @@
 # web-components
 
-用于存放 `hostra` 项目内可复用的 Web Components 组件。
+用于存放 `lithdoo-lab` workspace 内可复用的 Web Components 组件。
 
 建议约定：
 
