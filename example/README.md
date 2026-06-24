@@ -20,5 +20,3 @@
 ## 已有示例
 
 Hostra 自有示例已迁移至子模块 [`hostra/examples/`](../hostra/examples/)；Promptpile 自有示例已迁移至子模块 [`promptpile/examples/`](../promptpile/examples/)；dayloom 自有示例已迁移至子模块 [`dayloom/examples/`](../dayloom/examples/)；本目录仅保留依赖本 workspace 的示例。
-
-- `promptpile-tool-test/`：显式 TOML + `--after-hook-path` 的工具调用闭环示例；消息与 calls/result 都位于消息目录根层。

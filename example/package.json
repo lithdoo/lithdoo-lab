@@ -12,10 +12,6 @@
     "examples"
   ],
   "dependencies": {
-    "@agent-tool-lite/file": "file:../agent-lite-tools/file",
-    "@agent-tool-lite/search": "file:../agent-lite-tools/search",
-    "@agent-tool-lite/shell": "file:../agent-lite-tools/shell",
-    "@agent-tool-lite/web": "file:../agent-lite-tools/web",
     "@iarna/toml": "^2.2.5",
     "promptpile": "file:../promptpile/packages/promptpile",
     "tomlith": "file:../packages/tomlith",
