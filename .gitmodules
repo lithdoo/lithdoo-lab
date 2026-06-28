@@ -7,3 +7,6 @@
 [submodule "hostra"]
 	path = hostra
 	url = https://github.com/lithdoo/hostra.git
+[submodule "bindtty"]
+	path = bindtty
+	url = https://github.com/lithdoo/BindTTY.git
