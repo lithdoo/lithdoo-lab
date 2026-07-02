@@ -4,6 +4,7 @@
 
 当前主要内容：
 
+- [`bindtty`](bindtty/)：MVVM + signal-driven TUI 框架（TypeScript/TSX）。详见 [bindtty/README.md](./bindtty/README.md)。
 - [`hostra`](hostra/)：独立 hostra 仓库子模块。
 - [`promptpile`](promptpile/)：独立 promptpile 仓库子模块。
 - [`dayloom`](dayloom/)：独立 dayloom 仓库子模块。
